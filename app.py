@@ -13,7 +13,8 @@ def home():
     return "Bienvenue sur le serveur 🚀"
 
 # Route pour vérifier ID et mot de passe
-@app.route("/login", methods=["POST"])
+@app.route("/login", methods=["GET", "POST"])
+
 def login():
     data = request.json
     user_id = data.get("id")
