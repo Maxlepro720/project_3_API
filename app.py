@@ -3,10 +3,8 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 
 # Exemple d'utilisateurs stockés en mémoire
-users = {
-    "user1": "password123",
-    "user2": "abc456"
-}
+with open("passwords.txt","r") as fpass:
+    users = [ligne.strip() for ligne in fpass]
 
 @app.route("/")
 def home():
