@@ -29,8 +29,8 @@ def login():
     if not data:
         return jsonify({"status": "error", "message": "Données manquantes"}), 400
 
-    user_id = data.get("id")
-    password = data.get("password")
+    user_id = data.get("id").strip()
+    password = data.get("password").strip()
 
     if not user_id or not password:
         return jsonify({"status": "error", "message": "ID ou mot de passe manquant"}), 400
