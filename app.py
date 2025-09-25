@@ -1,13 +1,33 @@
-from flask import Flask
-import os
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+# Exemple d'utilisateurs stockés en mémoire
+users = {
+    "user1": "password123",
+    "user2": "abc456"
+}
+
 @app.route("/")
 def home():
-    return "Hello depuis Flask sur Render 🚀"
+    return "Bienvenue sur le serveur 🚀"
+
+# Route pour vérifier ID et mot de passe
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json
+    user_id = data.get("id")
+    password = data.get("password")
+
+    if not user_id or not password:
+        return jsonify({"status": "error", "message": "ID ou mot de passe manquant"}), 400
+
+    if user_id in users and users[user_id] == password:
+        return jsonify({"status": "success", "message": "Connexion réussie"})
+    else:
+        return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Render donne le port via env
+    import os
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
