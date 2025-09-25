@@ -2,9 +2,13 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Exemple d'utilisateurs stockés en mémoire
-with open("passwords.txt","r") as fpass:
-    users = [ligne.strip() for ligne in fpass]
+users = {}
+with open("passwords.txt", "r", encoding="utf-8") as fpass:
+    for ligne in fpass:
+        ligne = ligne.strip()
+        if ligne:
+            user_id, password = ligne.split(":", 1)  # sépare sur le premier :
+            users[user_id] = password
 
 @app.route("/")
 def home():
