@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Exemple d'utilisateurs stockés en mémoire
+# Utilisateurs stockés en mémoire
 users = {
     "user1": "password123",
     "user2": "abc456"
@@ -13,10 +13,12 @@ def home():
     return "Bienvenue sur le serveur 🚀"
 
 # Route pour vérifier ID et mot de passe
-@app.route("/login", methods=["GET", "POST"])
-
+@app.route("/login", methods=["POST"])  # POST uniquement
 def login():
-    data = request.json
+    data = request.get_json()  # plus sûr que request.json
+    if not data:
+        return jsonify({"status": "error", "message": "Données manquantes"}), 400
+
     user_id = data.get("id")
     password = data.get("password")
 
@@ -24,7 +26,7 @@ def login():
         return jsonify({"status": "error", "message": "ID ou mot de passe manquant"}), 400
 
     if user_id in users and users[user_id] == password:
-        return jsonify({"status": "success", "message": "Connexion réussie"})
+        return jsonify({"status": "success", "message": "Connexion réussie"}), 200
     else:
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
