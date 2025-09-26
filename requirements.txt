@@ -3,3 +3,4 @@ Flask
 requests
 supabase
 python-dotenv
+werkzeug
