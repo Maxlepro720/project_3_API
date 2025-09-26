@@ -1,71 +1,55 @@
 from flask import Flask, request, jsonify
-from supabase import create_client, Client
+from supabase import create_client
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
-from dotenv import load_dotenv
-
-# 🔹 Charger les variables depuis .env si présent (pour dev local)
-load_dotenv()
 
 app = Flask(__name__)
 
-# 🔹 Récupération correcte des variables d'environnement
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 🔹 Création du client Supabase
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-@app.route("/")
-def home():
-    return "Bienvenue sur le serveur 🚀"
-
-# 🔹 Signup
 @app.route("/signup", methods=["POST"])
 def signup():
     data = request.get_json()
-    user_id = (data.get("id") or "").strip()
-    password = (data.get("password") or "").strip()
+    username = data.get("id", "").strip()
+    password = data.get("password", "").strip()
 
-    if not user_id or not password:
+    if not username or not password:
         return jsonify({"status": "error", "message": "Champs manquants"}), 400
 
-    try:
-        response = supabase.auth.sign_up({
-            "email": user_id,   # on utilise email comme identifiant
-            "password": password
-        })
+    # Vérifie si l'utilisateur existe déjà
+    existing = supabase.table("users").select("*").eq("id", username).execute()
+    if existing.data and len(existing.data) > 0:
+        return jsonify({"status": "error", "message": "Utilisateur déjà existant"}), 409
 
-        if response.user:
-            return jsonify({"status": "success", "message": f"Utilisateur {user_id} ajouté"}), 201
-        else:
-            return jsonify({"status": "error", "message": response.error.message}), 400
+    # Hash du mot de passe
+    hashed_pw = generate_password_hash(password)
 
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    # Insert dans Supabase
+    supabase.table("users").insert({"id": username, "password_hash": hashed_pw}).execute()
 
-# 🔹 Login
+    return jsonify({"status": "success", "message": f"Utilisateur {username} ajouté"}), 201
+
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
-    user_id = (data.get("id") or "").strip()
-    password = (data.get("password") or "").strip()
+    username = data.get("id", "").strip()
+    password = data.get("password", "").strip()
 
-    if not user_id or not password:
+    if not username or not password:
         return jsonify({"status": "error", "message": "Champs manquants"}), 400
 
-    try:
-        response = supabase.auth.sign_in_with_password({
-            "email": user_id,
-            "password": password
-        })
+    # Récupère l'utilisateur
+    user = supabase.table("users").select("*").eq("id", username).execute()
+    if not user.data or len(user.data) == 0:
+        return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
-        if response.user:
-            return jsonify({"status": "success", "message": "Connexion réussie"}), 200
-        else:
-            return jsonify({"status": "error", "message": response.error.message}), 401
-
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    user_data = user.data[0]
+    if check_password_hash(user_data["password_hash"], password):
+        return jsonify({"status": "success", "message": "Connexion réussie"}), 200
+    else:
+        return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
