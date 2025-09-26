@@ -19,7 +19,7 @@ def signup():
         return jsonify({"status": "error", "message": "Champs manquants"}), 400
 
     # Vérifie si l'utilisateur existe déjà
-    existing = supabase.table("users").select("*").eq("id", username).execute()
+    existing = supabase.table("ID").select("*").eq("id", username).execute()
     if existing.data and len(existing.data) > 0:
         return jsonify({"status": "error", "message": "Utilisateur déjà existant"}), 409
 
@@ -27,7 +27,7 @@ def signup():
     hashed_pw = generate_password_hash(password)
 
     # Insert dans Supabase
-    supabase.table("users").insert({"id": username, "password_hash": hashed_pw}).execute()
+    supabase.table("users").insert({"id": username, "Password": hashed_pw}).execute()
 
     return jsonify({"status": "success", "message": f"Utilisateur {username} ajouté"}), 201
 
@@ -41,12 +41,12 @@ def login():
         return jsonify({"status": "error", "message": "Champs manquants"}), 400
 
     # Récupère l'utilisateur
-    user = supabase.table("users").select("*").eq("id", username).execute()
+    user = supabase.table("ID").select("*").eq("id", username).execute()
     if not user.data or len(user.data) == 0:
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
     user_data = user.data[0]
-    if check_password_hash(user_data["password_hash"], password):
+    if check_password_hash(user_data["Password"], password):
         return jsonify({"status": "success", "message": "Connexion réussie"}), 200
     else:
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
