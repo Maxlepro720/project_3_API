@@ -31,12 +31,14 @@ def login():
 
     user_id = data.get("id")
     password = data.get("password")
-    app.logger.info("user id : ",user_id,"/ password : ", password)
+    app.logger.info(f"user id: {user_id} / password: {password}")
 
     if not user_id or not password:
         return jsonify({"status": "error", "message": "ID ou mot de passe manquant"}), 400
 
     hashed_input = hash_password(password)  # hachage avant vérification
+    app.logger.info(f"user id: {user_id} / password: {password} / hash password :{hashed_input}")
+
 
     if user_id in users and users[user_id] == hashed_input:
         return jsonify({"status": "success", "message": "Connexion réussie"}), 200
