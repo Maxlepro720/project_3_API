@@ -1,2 +1,6 @@
-flask
 gunicorn
+Flask
+Flask-SQLAlchemy
+Flask-Migrate
+requests
+werkzeug
