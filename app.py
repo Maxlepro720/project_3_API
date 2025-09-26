@@ -4,8 +4,8 @@ import os
 
 app = Flask(__name__)
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_URL = os.environ.get("https://srjeijrpsnudvzfipxkc.supabase.co")
+SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyamVpanJwc251ZHZ6ZmlweGtjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODkwMTI1NCwiZXhwIjoyMDc0NDc3MjU0fQ.D8JRGHLsK-rc0JzvAUJOCsuuHkBrMBBjsfarRoJfZho")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.route("/")
