@@ -31,6 +31,7 @@ def login():
 
     user_id = data.get("id").strip()
     password = data.get("password").strip()
+    app.logger.info("user id : "+user_id,"/ password : "+ password)
 
     if not user_id or not password:
         return jsonify({"status": "error", "message": "ID ou mot de passe manquant"}), 400
