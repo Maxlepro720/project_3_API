@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
-from random import choice
+import random
 from datetime import datetime, timedelta
 import threading
 import time
