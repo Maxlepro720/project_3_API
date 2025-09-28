@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
-from random import *
+from random import choice
 from datetime import datetime, timedelta
 import threading
 import time
@@ -19,8 +19,6 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 🔹 Nom de la table
 TABLE_NAME = "Storage_ID_Password"
-Sessions_Code = ""
-message = ""
 
 def generate_session_code(length=12):
     chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -28,24 +26,42 @@ def generate_session_code(length=12):
     return code
 
 def verify_expiration(supabase_client, table="Sessions", expiration_minutes=10):
-    # Lire toutes les lignes
-    response = supabase_client.table(table).select("*").execute()
-    rows = response.data
+    """
+    Vérifie toutes les sessions de la table et supprime celles dont
+    la colonne 'Expiration' est plus ancienne que expiration_minutes.
+    """
+    try:
+        # Lire toutes les lignes
+        response = supabase_client.table(table).select("*").execute()
+        rows = response.data
+    except Exception as e:
+        print(f"Erreur lors de la récupération des sessions : {e}")
+        return
 
     now = datetime.utcnow()
 
     for row in rows:
-        expiration_str = row.get("Expiration")
-        if expiration_str:
-            try:
-                # Convertir la chaîne en datetime
-                expiration_time = datetime.fromisoformat(expiration_str)
-                if now - expiration_time > timedelta(minutes=expiration_minutes):
-                    # Supprimer la ligne expirée
-                    supabase_client.table(table).delete().eq("Code", row["Code"]).execute()
-                    print(f"Session {row['Code']} supprimée (expirée)")
-            except Exception as e:
-                print(f"Erreur lors de la vérification de la ligne {row}: {e}")
+        expiration_value = row.get("Expiration")
+        if not expiration_value:
+            continue  # pas de date, on ignore
+
+        try:
+            # Convertir en datetime si nécessaire
+            if isinstance(expiration_value, str):
+                expiration_time = datetime.fromisoformat(expiration_value)
+            elif isinstance(expiration_value, datetime):
+                expiration_time = expiration_value
+            else:
+                print(f"Format inattendu pour la date : {expiration_value}")
+                continue
+
+            # Vérifier si la session est expirée
+            if now - expiration_time > timedelta(minutes=expiration_minutes):
+                supabase_client.table(table).delete().eq("Code", row["Code"]).execute()
+                print(f"Session {row['Code']} supprimée (expirée)")
+
+        except Exception as e:
+            print(f"Erreur lors de la vérification de la ligne {row}: {e}")
 
 
 def run_cleanup_loop():
