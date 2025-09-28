@@ -1,6 +1,6 @@
-gunicorn
 Flask
-requests
 supabase
-python-dotenv
 werkzeug
+gunicorn
+python-dotenv
+requests
