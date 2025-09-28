@@ -4,6 +4,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from random import *
 from datetime import datetime, timedelta
+import threading
+import time
 
 
 app = Flask(__name__)
@@ -40,10 +42,11 @@ def verify_expiration(supabase_client, table="Sessions", expiration_minutes=10):
                 expiration_time = datetime.fromisoformat(expiration_str)
                 if now - expiration_time > timedelta(minutes=expiration_minutes):
                     # Supprimer la ligne expirée
-                    supabase_client.table(table).delete().eq("session_id", row["session_id"]).execute()
-                    print(f"Session {row['session_id']} supprimée (expirée)")
+                    supabase_client.table(table).delete().eq("Code", row["Code"]).execute()
+                    print(f"Session {row['Code']} supprimée (expirée)")
             except Exception as e:
                 print(f"Erreur lors de la vérification de la ligne {row}: {e}")
+
 
 def run_cleanup_loop():
     while True:
@@ -99,7 +102,7 @@ def login():
     if check_password_hash(user_data["Password"], password):
         Sessions_Code = generate_session_code()
         message = f"Connexion réussie, Code de Session : {Sessions_Code}"
-r       return jsonify({"status": "success", "message": message}), 200
+        return jsonify({"status": "success", "message": message}), 200
     else:
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
