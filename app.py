@@ -17,6 +17,8 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 🔹 Nom de la table
 TABLE_NAME = "Storage_ID_Password"
+Sessions_Code = ""
+message = ""
 
 def generate_session_code(length=12):
     chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -95,7 +97,9 @@ def login():
 
     user_data = user.data[0]
     if check_password_hash(user_data["Password"], password):
-        return jsonify({"status": "success", "message": "Connexion réussie"}), 200
+        Sessions_Code = generate_session_code()
+        message = f"Connexion réussie, Code de Session : {Sessions_Code}"
+r       return jsonify({"status": "success", "message": message}), 200
     else:
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
@@ -104,4 +108,3 @@ threading.Thread(target=run_cleanup_loop, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-    verify_expiration()
