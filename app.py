@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
+from random import *
+from datetime import datetime, timedelta
+
 
 app = Flask(__name__)
 
@@ -14,6 +17,36 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 🔹 Nom de la table
 TABLE_NAME = "Storage_ID_Password"
+
+def generate_session_code(length=12):
+    chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    code = "".join(random.choice(chars) for _ in range(length))
+    return code
+
+def verify_expiration(supabase_client, table="Sessions", expiration_minutes=10):
+    # Lire toutes les lignes
+    response = supabase_client.table(table).select("*").execute()
+    rows = response.data
+
+    now = datetime.utcnow()
+
+    for row in rows:
+        expiration_str = row.get("Expiration")
+        if expiration_str:
+            try:
+                # Convertir la chaîne en datetime
+                expiration_time = datetime.fromisoformat(expiration_str)
+                if now - expiration_time > timedelta(minutes=expiration_minutes):
+                    # Supprimer la ligne expirée
+                    supabase_client.table(table).delete().eq("session_id", row["session_id"]).execute()
+                    print(f"Session {row['session_id']} supprimée (expirée)")
+            except Exception as e:
+                print(f"Erreur lors de la vérification de la ligne {row}: {e}")
+
+def run_cleanup_loop():
+    while True:
+        verify_expiration(supabase)
+        time.sleep(20)  # toutes les 20 secondes
 
 @app.route("/")
 def home():
@@ -66,6 +99,9 @@ def login():
     else:
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
+threading.Thread(target=run_cleanup_loop, daemon=True).start()
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+    verify_expiration()
