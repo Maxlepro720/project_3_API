@@ -110,37 +110,38 @@ def login():
     if not username or not password:
         return jsonify({"status": "error", "message": "Champs manquants"}), 400
 
-    # Récupérer l'utilisateur
+    # Vérifier l'utilisateur
     user = supabase.table(TABLE_NAME).select("*").eq("ID", username).execute()
     if not user.data or len(user.data) == 0:
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
     user_data = user.data[0]
-    if check_password_hash(user_data["Password"], password):
-        # Générer un nouveau code de session
-        Sessions_Code = generate_session_code()
-        expiration_time = datetime.utcnow().isoformat()
-
-        # Vérifier si une session existe déjà pour cet utilisateur
-        existing_session = supabase.table("Sessions").select("*").eq("Creator", username).execute()
-        if existing_session.data and len(existing_session.data) > 0:
-            # Mettre à jour le code et l'expiration
-            supabase.table("Sessions").update({
-                "Code": Sessions_Code,
-                "Expiration": expiration_time
-            }).eq("Creator", username).execute()
-        else:
-            # Créer une nouvelle session
-            supabase.table("Sessions").insert({
-                "Code": Sessions_Code,
-                "Expiration": expiration_time,
-                "Creator": username
-            }).execute()
-
-        message = f"Connexion réussie, Code de Session : {Sessions_Code}"
-        return jsonify({"status": "success", "message": message}), 200
-    else:
+    if not check_password_hash(user_data["Password"], password):
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
+
+    # Générer un nouveau code de session
+    Sessions_Code = generate_session_code()
+    expiration_time = datetime.utcnow().isoformat()
+
+    # Vérifier si l'utilisateur a déjà une session
+    existing_session = supabase.table("Sessions").select("*").eq("Creator", username).execute()
+
+    if existing_session.data and len(existing_session.data) > 0:
+        # Mettre à jour le code et l'expiration
+        supabase.table("Sessions").update({
+            "Code": Sessions_Code,
+            "Expiration": expiration_time
+        }).eq("Creator", username).execute()
+    else:
+        # Créer une nouvelle session
+        supabase.table("Sessions").insert({
+            "Code": Sessions_Code,
+            "Expiration": expiration_time,
+            "Creator": username
+        }).execute()
+
+    message = f"Connexion réussie, Code de Session : {Sessions_Code}"
+    return jsonify({"status": "success", "message": message}), 200
 
 
 threading.Thread(target=run_cleanup_loop, daemon=True).start()
