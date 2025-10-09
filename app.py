@@ -143,6 +143,27 @@ def login():
     message = f"Connexion réussie, Code de Session : {Sessions_Code}"
     return jsonify({"status": "success", "message": message}), 200
 
+@app.route("/session", methods=["GET"])
+def my_session():
+    username = request.args.get("user")  # on passe l'id de l'utilisateur dans l'URL
+
+    if not username:
+        return jsonify({"status": "error", "message": "ID utilisateur manquant"}), 400
+
+    try:
+        response = supabase.table("Sessions").select("*").eq("Creator", username).execute()
+        sessions = response.data
+
+        if sessions and len(sessions) > 0:
+            # On renvoie uniquement le code de session
+            return jsonify({"status": "success", "code": sessions[0]["Code"]}), 200
+        else:
+            return jsonify({"status": "error", "message": "Aucune session trouvée"}), 404
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 
 threading.Thread(target=run_cleanup_loop, daemon=True).start()
 
