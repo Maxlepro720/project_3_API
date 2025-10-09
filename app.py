@@ -25,7 +25,7 @@ def generate_session_code(length=12):
     code = "".join(random.choice(chars) for _ in range(length))
     return code
 
-def verify_expiration(supabase_client, table="Sessions", expiration_minutes=10):
+def verify_expiration(supabase_client, table="Sessions", expiration_minutes=60):
     """
     Vérifie toutes les sessions de la table et supprime celles dont
     la colonne 'Expiration' est plus ancienne que expiration_minutes.
