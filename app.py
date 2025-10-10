@@ -163,6 +163,28 @@ def my_session():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/check_session", methods=["GET"])
+def check_session():
+    """Vérifie si un code de session existe dans la base Supabase"""
+    code = request.args.get("code")
+
+    if not code:
+        return jsonify({"status": "error", "message": "Code manquant"}), 400
+
+    try:
+        # Vérifie dans la table Sessions si le code existe
+        response = supabase.table("Sessions").select("*").eq("Code", code).execute()
+        sessions = response.data
+
+        if sessions and len(sessions) > 0:
+            return jsonify({"exists": True, "creator": sessions[0].get("Creator")}), 200
+        else:
+            return jsonify({"exists": False}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 
 
 threading.Thread(target=run_cleanup_loop, daemon=True).start()
