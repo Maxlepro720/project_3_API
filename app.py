@@ -114,6 +114,22 @@ def my_session():
         print(f"[SESSION] Erreur : {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+@app.route("/join", methods=["POST"])
+def join_session():
+    data = request.get_json(force=True)
+    code = (data.get("code") or "").strip()
+    if not code:
+        return jsonify({"status": "error", "message": "Code manquant"}), 400
+    try:
+        response = supabase.table("Sessions").select("*").eq("Code", code).execute()
+        if not response.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+        session = response.data[0]
+        return jsonify({"status": "success", "message": f"Rejoint la session {code}", "session": session}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
 cleanup_thread.start()
 
