@@ -119,35 +119,39 @@ def my_session():
 def join_session():
     data = request.get_json(force=True)
     code = (data.get("code") or "").strip()
-    player_id = (data.get("id") or "").strip()  # On récupère l'id du joueur
+    player_id = (data.get("id") or "").strip()  # ID du joueur qui rejoint
 
     if not code or not player_id:
-        return jsonify({"status": "error", "message": "Code ou ID joueur manquant"}), 400
+        return jsonify({"status": "error", "message": "Code ou ID manquant"}), 400
 
     try:
-        # Récupère la session
+        # Récupérer la session
         response = supabase.table("Sessions").select("*").eq("Code", code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
         session = response.data[0]
 
-        # Récupère la liste actuelle des joueurs, si elle n'existe pas, initialise
-        current_players = session.get("Players") or []
-        if player_id not in current_players:
-            current_players.append(player_id)
+        # Vérifier que le joueur n'est pas le créateur
+        if session["Creator"] == player_id:
+            return jsonify({"status": "error", "message": "Vous êtes déjà le créateur de cette session"}), 400
 
-        # Met à jour la table avec la nouvelle liste
-        supabase.table("Sessions").update({"Players": current_players}).eq("Code", code).execute()
+        # Initialiser la liste des joueurs si nécessaire
+        players = session.get("Players") or []
 
-        return jsonify({
-            "status": "success",
-            "message": f"Joueur {player_id} rejoint la session {code}",
-            "players": current_players
-        }), 200
+        # Vérifier que le joueur n'est pas déjà dans la session
+        if player_id in players:
+            return jsonify({"status": "error", "message": "Vous avez déjà rejoint cette session"}), 400
+
+        # Ajouter le joueur à la session
+        players.append(player_id)
+        supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
+
+        return jsonify({"status": "success", "message": f"Rejoint la session {code}", "session": session}), 200
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
