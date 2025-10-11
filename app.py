@@ -152,6 +152,35 @@ def join_session():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/leave", methods=["POST"])
+def leave_session():
+    data = request.get_json(force=True)
+    code = (data.get("code") or "").strip()
+    player_id = (data.get("id") or "").strip()
+
+    if not code or not player_id:
+        return jsonify({"status": "error", "message": "Code ou ID manquant"}), 400
+
+    try:
+        response = supabase.table("Sessions").select("*").eq("Code", code).execute()
+        if not response.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+
+        session = response.data[0]
+        players = session.get("Players") or []
+
+        if player_id not in players:
+            return jsonify({"status": "error", "message": "Vous n’êtes pas dans cette session"}), 400
+
+        players.remove(player_id)
+        supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
+
+        return jsonify({"status": "success", "message": f"{player_id} a quitté la session"}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 
 
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
