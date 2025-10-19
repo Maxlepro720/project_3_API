@@ -67,7 +67,6 @@ def signup():
     if not username or not password:
         return jsonify({"status": "error", "message": "Champs manquants"}), 400
 
-    # Table renommée ici → "Player"
     existing = supabase.table("Player").select("*").eq("ID", username).execute()
     if existing.data:
         return jsonify({"status": "error", "message": "Utilisateur déjà existant"}), 409
@@ -103,11 +102,12 @@ def login():
     if existing_session.data:
         supabase.table("Sessions").update({"Code": Sessions_Code, "Expiration": expiration_time}).eq("Creator", username).execute()
         print(f"[LOGIN] Session mise à jour pour {username}")
-        supabase.table("Player").update({"Status": "🟢 online"}).eq("ID", username).execute()
-
     else:
         supabase.table("Sessions").insert({"Code": Sessions_Code, "Expiration": expiration_time, "Creator": username}).execute()
         print(f"[LOGIN] Nouvelle session pour {username}")
+
+    # ✅ Mettre le joueur en ligne à chaque login
+    supabase.table("Player").update({"Status": "🟢 online"}).eq("ID", username).execute()
 
     return jsonify({"status": "success", "code": Sessions_Code}), 200
 
@@ -190,6 +190,7 @@ def leave_session():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# --- LOGOUT ---
 @app.route("/logout", methods=["POST"])
 def logout():
     data = request.get_json(force=True)
@@ -199,12 +200,10 @@ def logout():
         return jsonify({"status": "error", "message": "ID manquant"}), 400
 
     try:
-        # Vérifie que le joueur existe
         user = supabase.table("Player").select("*").eq("ID", username).execute()
         if not user.data:
             return jsonify({"status": "error", "message": "Utilisateur introuvable"}), 404
 
-        # Met le joueur hors ligne
         supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
         print(f"[LOGOUT] {username} est maintenant offline")
 
@@ -214,8 +213,7 @@ def logout():
         print(f"[LOGOUT] Erreur : {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
-
+# --- Cleanup loop ---
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
 cleanup_thread.start()
 
