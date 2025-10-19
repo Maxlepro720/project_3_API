@@ -73,7 +73,7 @@ def signup():
         return jsonify({"status": "error", "message": "Utilisateur déjà existant"}), 409
 
     hashed_pw = generate_password_hash(password)
-    supabase.table("Player").insert({"ID": username, "Password": hashed_pw, "Status": "offline"}).execute()
+    supabase.table("Player").insert({"ID": username, "Password": hashed_pw, "Status": "🔴 offline"}).execute()
     print(f"[SIGNUP] {username} créé")
 
     return jsonify({"status": "success", "message": f"Utilisateur {username} ajouté"}), 201
@@ -103,7 +103,7 @@ def login():
     if existing_session.data:
         supabase.table("Sessions").update({"Code": Sessions_Code, "Expiration": expiration_time}).eq("Creator", username).execute()
         print(f"[LOGIN] Session mise à jour pour {username}")
-        supabase.table("Player").update({"Status": "online"}).eq("ID", username).execute()
+        supabase.table("Player").update({"Status": "🟢 online"}).eq("ID", username).execute()
 
     else:
         supabase.table("Sessions").insert({"Code": Sessions_Code, "Expiration": expiration_time, "Creator": username}).execute()
@@ -205,7 +205,7 @@ def logout():
             return jsonify({"status": "error", "message": "Utilisateur introuvable"}), 404
 
         # Met le joueur hors ligne
-        supabase.table("Player").update({"Status": "offline"}).eq("ID", username).execute()
+        supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
         print(f"[LOGOUT] {username} est maintenant offline")
 
         return jsonify({"status": "success", "message": f"{username} est offline"}), 200
