@@ -260,6 +260,39 @@ def get_poires():
         print("[ERREUR /poires]", e)
         return jsonify({"status": "error", "message": "Erreur serveur"}), 500
 
+@app.route("/get_player", methods=["GET"])
+def get_player():
+    username = request.args.get("username", "").strip()
+    session_code = request.args.get("session_code", "").strip()
+
+    if not username or not session_code:
+        return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
+
+    try:
+        # Récupérer la session
+        response = supabase.table("Sessions").select("*").eq("Code", session_code).execute()
+        if not response.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+
+        session = response.data[0]
+        players = session.get("Players", [])
+        creator = session.get("Creator")
+
+        # Vérifier si le username est le créateur
+        if username == creator:
+            # Renvoie le premier joueur dans Players (s'il existe)
+            if players:
+                return jsonify({"status": "success", "player": players[0]}), 200
+            else:
+                return jsonify({"status": "success", "player": None}), 200
+        else:
+            # Si ce n’est pas le créateur, renvoyer le créateur
+            return jsonify({"status": "success", "player": creator}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # --- Cleanup loop ---
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
 cleanup_thread.start()
