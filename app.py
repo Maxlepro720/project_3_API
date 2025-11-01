@@ -216,7 +216,7 @@ def logout():
 def poire():
     data = request.get_json(force=True)
     session_code = (data.get("session") or "").strip()
-    click = (data.get("click") or "").strip()
+    click = (data.get("click") or "")
     if not session_code:
         return jsonify({"status": "error", "message": "ID utilisateur manquant"}), 400
     try:
