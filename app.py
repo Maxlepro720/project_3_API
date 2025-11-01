@@ -236,6 +236,30 @@ def poire():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+# --- RÉCUPÉRATION DU NOMBRE DE POIRES ---
+@app.route("/get_poires", methods=["GET"])
+def get_poires():
+    session_code = request.args.get("session", "").strip()
+    if not session_code:
+        return jsonify({"status": "error", "message": "Code de session manquant"}), 400
+
+    try:
+        # 🔍 Récupère la ligne de la session
+        session_data = supabase.table("Sessions").select("poires").eq("Code", session_code).execute()
+
+        if not session_data.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+
+        # 🍐 Nombre de poires
+        poires = session_data.data[0].get("poires", 0)
+
+        return jsonify({"status": "success", "poires": poires}), 200
+
+    except Exception as e:
+        print("[ERREUR /poires]", e)
+        return jsonify({"status": "error", "message": "Erreur serveur"}), 500
+
 # --- Cleanup loop ---
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
 cleanup_thread.start()
