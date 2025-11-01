@@ -229,7 +229,7 @@ def poire():
         poires2add = by_click * click
         poires = session["poires"]
         
-        res = supabase.rpc("add_poires", {"val": 3, "session_code": session_code}).execute()
+        res = supabase.rpc("add_poires", {"val": poires2add, "session_code": session_code}).execute()
         return jsonify({"status": "success", "added": poires2add, "poires": poires }), 200
 
         
