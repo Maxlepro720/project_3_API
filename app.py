@@ -189,7 +189,6 @@ def leave_session():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- LOGOUT ---
 @app.route("/logout", methods=["POST"])
 def logout():
     data = request.get_json(force=True)
@@ -203,10 +202,20 @@ def logout():
         if not user.data:
             return jsonify({"status": "error", "message": "Utilisateur introuvable"}), 404
 
+        # 🔴 Mettre le joueur offline
         supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
         print(f"[LOGOUT] {username} est maintenant offline")
 
-        return jsonify({"status": "success", "message": f"{username} est offline"}), 200
+        # ✅ Retirer le joueur de toutes les sessions où il est présent
+        response = supabase.table("Sessions").select("*").execute()
+        for session in response.data or []:
+            players = session.get("Players") or []
+            if username in players:
+                players.remove(username)
+                supabase.table("Sessions").update({"Players": players}).eq("Code", session["Code"]).execute()
+                print(f"[LOGOUT] {username} retiré de la session {session['Code']}")
+
+        return jsonify({"status": "success", "message": f"{username} est offline et retiré des sessions"}), 200
 
     except Exception as e:
         print(f"[LOGOUT] Erreur : {e}")
