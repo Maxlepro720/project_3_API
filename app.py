@@ -212,6 +212,30 @@ def logout():
         print(f"[LOGOUT] Erreur : {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/poire", methods=["POST"])
+def poire():
+    data = request.get_json(force=True)
+    session_code = (data.get("session") or "").strip()
+    click = (data.get("click") or "").strip()
+    if not session_code:
+        return jsonify({"status": "error", "message": "ID utilisateur manquant"}), 400
+    try:
+        response = supabase.table("Sessions").select("*").eq("Code", session_code).execute()
+        if not response.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+
+        session = response.data[0]
+        by_click = session["By_Click"]
+        poires2add = by_click * click
+        poires = session["poires"]
+        
+        res = supabase.rpc("add_poires", {"val": 3, "session_code": session_code}).execute()
+        return jsonify({"status": "success", "added": poires2add, "poires": poires }), 200
+
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # --- Cleanup loop ---
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
 cleanup_thread.start()
