@@ -96,14 +96,13 @@ def login():
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
     Sessions_Code = generate_session_code()
-    expiration_time = datetime.utcnow().isoformat()
 
     existing_session = supabase.table("Sessions").select("*").eq("Creator", username).execute()
     if existing_session.data:
-        supabase.table("Sessions").update({"Code": Sessions_Code, "Expiration": expiration_time}).eq("Creator", username).execute()
+        supabase.table("Sessions").update({"Code": Sessions_Code}).eq("Creator", username).execute()
         print(f"[LOGIN] Session mise à jour pour {username}")
     else:
-        supabase.table("Sessions").insert({"Code": Sessions_Code, "Expiration": expiration_time, "Creator": username}).execute()
+        supabase.table("Sessions").insert({"Code": Sessions_Code, "Creator": username}).execute()
         print(f"[LOGIN] Nouvelle session pour {username}")
 
     # ✅ Mettre le joueur en ligne à chaque login
