@@ -202,14 +202,24 @@ def logout():
         if not user.data:
             return jsonify({"status": "error", "message": "Utilisateur introuvable"}), 404
 
-        # 🔴 Mettre le joueur offline
+        # 🔴 Met le joueur offline
         supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
         print(f"[LOGOUT] {username} est maintenant offline")
 
-        # ✅ Retirer le joueur de toutes les sessions où il est présent
+        # ✅ Retirer le joueur de toutes les sessions
         response = supabase.table("Sessions").select("*").execute()
+
         for session in response.data or []:
-            players = session.get("Players") or []
+            players_raw = session.get("Players") or []
+            # 🧠 Convertir proprement le champ en liste
+            if isinstance(players_raw, str):
+                try:
+                    players = json.loads(players_raw)
+                except:
+                    players = [players_raw]
+            else:
+                players = players_raw
+
             if username in players:
                 players.remove(username)
                 supabase.table("Sessions").update({"Players": players}).eq("Code", session["Code"]).execute()
@@ -220,7 +230,7 @@ def logout():
     except Exception as e:
         print(f"[LOGOUT] Erreur : {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
+        
 @app.route("/poire", methods=["POST"])
 def poire():
     data = request.get_json(force=True)
