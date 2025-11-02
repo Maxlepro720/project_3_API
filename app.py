@@ -299,23 +299,22 @@ def get_player():
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
         session = response.data[0]
-        players = session.get("Players", [])
+        players = session.get("Players") or []  # Liste des joueurs
         creator = session.get("Creator")
 
-        # Vérifier si le username est le créateur
+        # Si l'utilisateur est le créateur, afficher le premier joueur dans Players
         if username == creator:
-            # Renvoie le premier joueur dans Players (s'il existe)
-            if players:
-                return jsonify({"status": "success", "player": players[0]}), 200
+            other_players = [p for p in players if p != creator]  # exclure le créateur
+            if other_players:
+                return jsonify({"status": "success", "player": other_players[0]}), 200
             else:
                 return jsonify({"status": "success", "player": None}), 200
         else:
-            # Si ce n’est pas le créateur, renvoyer le créateur
-            return jsonify({"status": "success", "player": "👑"+creator}), 200
+            # Si ce n’est pas le créateur, afficher le créateur avec la couronne
+            return jsonify({"status": "success", "player": f"👑{creator}"}), 200
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 # --- Cleanup loop ---
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
