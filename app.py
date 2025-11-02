@@ -186,8 +186,7 @@ def leave_session():
         if player_id not in players:
             return jsonify({"status": "error", "message": "Vous n’êtes pas dans cette session"}), 400
 
-        players.remove(player_id)
-        supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
+        supabase.table("Sessions").update({"Players": ""}).eq("Code", code).execute()
 
         return jsonify({"status": "success", "message": f"{player_id} a quitté la session"}), 200
 
