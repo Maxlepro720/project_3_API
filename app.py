@@ -148,12 +148,19 @@ def join_session():
         if session["Creator"] == player_id:
             return jsonify({"status": "error", "message": "Vous êtes déjà le créateur de cette session"}), 400
 
-        players = session.get("Players") or []
+        # Récupérer la chaîne des joueurs actuels
+        players_str = session.get("Players") or ""
+        players = [p.strip() for p in players_str.split(",") if p.strip()]
+
+        # Éviter les doublons
         if player_id in players:
             return jsonify({"status": "error", "message": "Vous avez déjà rejoint cette session"}), 400
 
         players.append(player_id)
-        supabase.table("Sessions").update({"Players": player_id}).eq("Code", code).execute()
+        players_str = ",".join(players)  # transformer en chaîne séparée par des virgules
+
+        # Mettre à jour la colonne Players
+        supabase.table("Sessions").update({"Players": players_str}).eq("Code", code).execute()
 
         return jsonify({"status": "success", "message": f"Rejoint la session {code}", "session": session}), 200
 
