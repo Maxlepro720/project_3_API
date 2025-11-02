@@ -158,6 +158,7 @@ def join_session():
 
         players.append(player_id)
         players_str = ",".join(players)  # transformer en chaîne séparée par des virgules
+        print("[DEBUG] Joueur rejoint :", player_id, "--",player_str)
 
         # Mettre à jour la colonne Players
         supabase.table("Sessions").update({"Players": players_str}).eq("Code", code).execute()
