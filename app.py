@@ -298,27 +298,31 @@ def get_player():
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
         session = response.data[0]
-        players_raw = session.get("Players") or "[]"
-
-        # Convertir la string JSON en liste Python
-        try:
-            players = json.loads(players_raw) if isinstance(players_raw, str) else players_raw
-        except:
-            players = []
-
+        players_raw = session.get("Players")  # Peut être None ou string
         creator = session.get("Creator")
 
+        # Convertir proprement en liste Python
+        if not players_raw:
+            players = []
+        elif isinstance(players_raw, str):
+            try:
+                players = json.loads(players_raw)
+            except:
+                players = [players_raw]  # fallback si ce n’est pas du JSON
+        else:
+            players = list(players_raw)  # si déjà liste
+
+        # Renvoie tous les joueurs sauf le créateur si c’est le créateur qui demande
         if username == creator:
-            # Renvoyer tous les joueurs sauf le créateur
             other_players = [p for p in players if p != creator]
-            print(other_player)
             return jsonify({"status": "success", "player": other_players}), 200
         else:
-            # Si ce n’est pas le créateur, renvoyer le créateur
             return jsonify({"status": "success", "player": creator}), 200
 
     except Exception as e:
+        print("[ERROR /get_player]", e)  # <- ici tu peux voir l'erreur dans la console Render
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # --- Cleanup loop ---
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
