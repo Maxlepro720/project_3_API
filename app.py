@@ -153,7 +153,7 @@ def join_session():
             return jsonify({"status": "error", "message": "Vous avez déjà rejoint cette session"}), 400
 
         players.append(player_id)
-        supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
+        supabase.table("Sessions").update({"Players": player_id}).eq("Code", code).execute()
 
         return jsonify({"status": "success", "message": f"Rejoint la session {code}", "session": session}), 200
 
