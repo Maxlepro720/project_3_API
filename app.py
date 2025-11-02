@@ -306,7 +306,7 @@ def get_player():
                 return jsonify({"status": "success", "player": None}), 200
         else:
             # Si ce n’est pas le créateur, renvoyer le créateur
-            return jsonify({"status": "success", "player": creator}), 200
+            return jsonify({"status": "success", "player": "👑"+creator}), 200
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
