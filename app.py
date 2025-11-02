@@ -293,25 +293,29 @@ def get_player():
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
 
     try:
-        # Récupérer la session
         response = supabase.table("Sessions").select("*").eq("Code", session_code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
         session = response.data[0]
-        players = session.get("Players") or []  # Liste des joueurs
+        players_raw = session.get("Players") or "[]"
+
+        # Convertir la string JSON en liste Python
+        try:
+            players = json.loads(players_raw) if isinstance(players_raw, str) else players_raw
+        except:
+            players = []
+
         creator = session.get("Creator")
 
-        # Si l'utilisateur est le créateur, afficher le premier joueur dans Players
         if username == creator:
-            other_players = [p for p in players if p != creator]  # exclure le créateur
-            if other_players:
-                return jsonify({"status": "success", "player": other_players[0]}), 200
-            else:
-                return jsonify({"status": "success", "player": None}), 200
+            # Renvoyer tous les joueurs sauf le créateur
+            other_players = [p for p in players if p != creator]
+            print(other_player)
+            return jsonify({"status": "success", "player": other_players}), 200
         else:
-            # Si ce n’est pas le créateur, afficher le créateur avec la couronne
-            return jsonify({"status": "success", "player": f"👑{creator}"}), 200
+            # Si ce n’est pas le créateur, renvoyer le créateur
+            return jsonify({"status": "success", "player": creator}), 200
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
