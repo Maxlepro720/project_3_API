@@ -322,6 +322,84 @@ def get_player():
         print("[ERROR /get_player]", e)  # <- ici tu peux voir l'erreur dans la console Render
         return jsonify({"status": "error", "message": str(e)}), 500
 
+    # --- VERIFY SESSION ---
+@app.route("/verify_session", methods=["GET"])
+def verify_session():
+    player_id = request.args.get("id", "").strip()
+
+    if not player_id:
+        return jsonify({"status": "error", "message": "ID manquant"}), 400
+
+    try:
+        # Récupérer toutes les sessions
+        response = supabase.table("Sessions").select("*").execute()
+        sessions = response.data or []
+
+        for session in sessions:
+            players_raw = session.get("Players") or []
+            # Conversion en liste
+            if isinstance(players_raw, str):
+                try:
+                    players = json.loads(players_raw)
+                except:
+                    players = [players_raw]
+            else:
+                players = list(players_raw)
+
+            # Vérifie si le joueur est dans la session
+            if player_id in players or session.get("Creator") == player_id:
+                return jsonify({
+                    "status": "success",
+                    "session_code": session.get("Code"),
+                    "creator": session.get("Creator"),
+                    "players": players
+                }), 200
+
+        # Si aucun résultat
+        return jsonify({"status": "error", "message": "Joueur non trouvé dans aucune session"}), 404
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# --- CHANGE SESSION ---
+@app.route("/change_session", methods=["POST"])
+def change_session():
+    data = request.get_json(force=True)
+    player_id = (data.get("id") or "").strip()
+    new_session_name = (data.get("new_session_name") or "").strip()
+
+    if not player_id or not new_session_name:
+        return jsonify({"status": "error", "message": "ID ou nouveau nom manquant"}), 400
+
+    try:
+        # Vérifier si le nouveau nom est déjà pris par une autre session
+        existing = supabase.table("Sessions").select("*").eq("Code", new_session_name).execute()
+        if existing.data:
+            return jsonify({"status": "error", "message": "Ce nom de session est déjà utilisé"}), 409
+
+        # Trouver la session actuelle du joueur
+        session_response = supabase.table("Sessions").select("*").or_(
+            f"Creator.eq.{player_id},Players.cs.['{player_id}']"
+        ).execute()
+
+        if not session_response.data:
+            return jsonify({"status": "error", "message": "Aucune session trouvée pour ce joueur"}), 404
+
+        session = session_response.data[0]
+        old_session_code = session["Code"]
+
+        # Mettre à jour le nom de la session
+        supabase.table("Sessions").update({"Code": new_session_name}).eq("Code", old_session_code).execute()
+
+        return jsonify({
+            "status": "success",
+            "message": f"Session changée de '{old_session_code}' à '{new_session_name}'",
+            "new_code": new_session_name
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # --- Cleanup loop ---
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
