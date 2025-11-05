@@ -372,23 +372,30 @@ def change_session():
         return jsonify({"status": "error", "message": "ID ou nouveau nom manquant"}), 400
 
     try:
-        # Vérifier si le nouveau nom est déjà pris par une autre session
         existing = supabase.table("Sessions").select("*").eq("Code", new_session_name).execute()
         if existing.data:
             return jsonify({"status": "error", "message": "Ce nom de session est déjà utilisé"}), 409
 
-        # Trouver la session actuelle du joueur
-        session_response = supabase.table("Sessions").select("*").or_(
-            f"Creator.eq.{player_id},Players.cs.['{player_id}']"
-        ).execute()
+        sessions = supabase.table("Sessions").select("*").execute().data or []
+        session = None
+        for s in sessions:
+            players_raw = s.get("Players") or []
+            if isinstance(players_raw, str):
+                try:
+                    import json
+                    players = json.loads(players_raw)
+                except:
+                    players = [players_raw]
+            else:
+                players = players_raw
+            if s.get("Creator") == player_id or player_id in players:
+                session = s
+                break
 
-        if not session_response.data:
+        if not session:
             return jsonify({"status": "error", "message": "Aucune session trouvée pour ce joueur"}), 404
 
-        session = session_response.data[0]
         old_session_code = session["Code"]
-
-        # Mettre à jour le nom de la session
         supabase.table("Sessions").update({"Code": new_session_name}).eq("Code", old_session_code).execute()
 
         return jsonify({
