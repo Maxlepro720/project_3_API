@@ -407,6 +407,54 @@ def change_session():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# --- ADD BY_CLICK VIA ID ---
+@app.route("/add_by_click", methods=["POST"])
+def add_by_click():
+    data = request.get_json(force=True)
+    player_id = (data.get("id") or "").strip()
+    by_click_value = data.get("by_click")
+
+    if not player_id or by_click_value is None:
+        return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
+
+    try:
+        # 🔍 Cherche la session où ce joueur est le créateur
+        response = supabase.table("Sessions").select("Code, By_Click").eq("Creator", player_id).execute()
+
+        if not response.data:
+            return jsonify({"status": "error", "message": "Aucune session trouvée pour cet ID"}), 404
+
+        session = response.data[0]
+        current_by_click = session.get("By_Click", 0)
+        session_code = session.get("Code")
+
+        # 🔢 Convertir proprement les valeurs
+        try:
+            current_by_click = float(current_by_click)
+            by_click_value = float(by_click_value)
+        except ValueError:
+            return jsonify({"status": "error", "message": "Valeur by_click invalide"}), 400
+
+        # ➕ Ajout de la nouvelle valeur
+        new_by_click = current_by_click + by_click_value
+
+        # 🔁 Mise à jour dans Supabase
+        supabase.table("Sessions").update({"By_Click": new_by_click}).eq("Creator", player_id).execute()
+
+        print(f"[BY_CLICK_ID] Session {session_code} (créée par {player_id}) mise à jour : {current_by_click} → {new_by_click}")
+
+        return jsonify({
+            "status": "success",
+            "creator": player_id,
+            "session_code": session_code,
+            "old_value": current_by_click,
+            "added": by_click_value,
+            "new_value": new_by_click
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR /add_by_click] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # --- Cleanup loop ---
 cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
