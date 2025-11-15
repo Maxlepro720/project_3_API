@@ -7,8 +7,10 @@ from datetime import datetime, timedelta
 import threading
 import time
 import gc
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app) 
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
