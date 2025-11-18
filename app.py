@@ -291,6 +291,66 @@ def get_player():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/create", methods=["POST"])
+def create_session():
+    """
+    Crée une nouvelle session pour l'utilisateur. 
+    Vérifie d'abord s'il est déjà actif dans une autre.
+    """
+    data = request.get_json(force=True)
+    player_id = (data.get("id") or "").strip()
+    
+    if not player_id:
+        return jsonify({"status": "error", "message": "ID utilisateur manquant"}), 400
+
+    try:
+        # 1. Vérification si le joueur est déjà actif dans une session (Créateur ou Joueur)
+        response = supabase.table("Sessions").select("Code,Creator,Players").execute()
+        sessions = response.data or []
+        
+        current_session_code = None
+        for session in sessions:
+            players_raw = session.get("Players") or []
+            players = []
+            if isinstance(players_raw, str):
+                try: players = json.loads(players_raw)
+                except: players = []
+            else:
+                players = players_raw
+            
+            if session.get("Creator") == player_id or player_id in players:
+                current_session_code = session.get("Code")
+                break
+
+        if current_session_code:
+            return jsonify({
+                "status": "error", 
+                "message": f"Vous êtes déjà actif dans la session '{current_session_code}'. Quittez-la d'abord.",
+                "session_name": current_session_code
+            }), 409 # Conflict
+
+        # 2. Génération du nouveau code et insertion
+        session_code = generate_session_code()
+        
+        new_session_data = {
+            "Code": session_code,
+            "Creator": player_id,
+            "Players": [], # La liste des joueurs invités (le créateur est stocké séparément)
+            "poires": 0,
+            "By_Click": 1, 
+            "Expiration": (datetime.utcnow() + timedelta(minutes=60)).isoformat()
+        }
+
+        supabase.table("Sessions").insert(new_session_data).execute()
+        print(f"[CREATE] Nouvelle session {session_code} créée par {player_id}")
+        
+        return jsonify({"status": "success", "session_name": session_code}), 201
+        
+    except Exception as e:
+        print(f"[CREATE ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # --- VERIFY SESSION ---
 @app.route("/verify_session", methods=["GET"])
 def verify_session():
