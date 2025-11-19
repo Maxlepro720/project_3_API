@@ -216,6 +216,7 @@ def poire():
 
         new_total = current_poires + poires2add
         supabase.table("Sessions").update({"poires": new_total}).eq("Code", session_code).execute()
+        supabase.table("Sessions").update({"Click": click}).eq("Code", session_code).execute()
         return jsonify({"status": "success", "added": poires2add, "poires": new_total}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
