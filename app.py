@@ -3,7 +3,7 @@ from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta # Gardé pour d'autres raisons potentielles mais non utilisé pour l'expiration
 import threading
 import time
 import gc
@@ -25,35 +25,9 @@ def generate_session_code(length=12):
     chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return "".join(random.choice(chars) for _ in range(length))
 
-def verify_expiration(supabase_client, table="Sessions", expiration_minutes=60):
-    try:
-        response = supabase_client.table(table).select("Code,Expiration").limit(100).execute()
-        rows = response.data or []
-    except Exception as e:
-        print(f"[CLEANUP] Erreur récupération sessions : {e}")
-        return
-
-    now = datetime.utcnow()
-    for row in rows:
-        try:
-            expiration_value = row.get("Expiration")
-            if not expiration_value:
-                continue
-            if isinstance(expiration_value, str):
-                expiration_time = datetime.fromisoformat(expiration_value)
-            else:
-                expiration_time = expiration_value
-            if now - expiration_time > timedelta(minutes=expiration_minutes):
-                supabase_client.table(table).delete().eq("Code", row["Code"]).execute()
-                print(f"[CLEANUP] Session {row['Code']} supprimée")
-        except Exception as e:
-            print(f"[CLEANUP] Erreur sur {row}: {e}")
-    gc.collect()
-
-def run_cleanup_loop():
-    while True:
-        verify_expiration(supabase)
-        time.sleep(180)
+# --- LOGIQUE D'EXPIRATION SUPPRIMÉE ---
+# La fonction verify_expiration et run_cleanup_loop ont été supprimées
+# car elles dépendaient de la colonne 'Expiration' qui n'existe plus.
 
 @app.route("/")
 def home():
@@ -100,9 +74,11 @@ def login():
     session_code = generate_session_code()
     existing_session = supabase.table("Sessions").select("*").eq("Creator", username).execute()
     if existing_session.data:
+        # NOTE : Si la colonne 'Expiration' n'existe plus, assurez-vous de ne pas essayer de la mettre à jour ici
         supabase.table("Sessions").update({"Code": session_code}).eq("Creator", username).execute()
         print(f"[LOGIN] Session mise à jour pour {username}")
     else:
+        # NOTE : Si la colonne 'Expiration' n'existe plus, assurez-vous de ne pas essayer de l'insérer ici
         supabase.table("Sessions").insert({"Code": session_code, "Creator": username, "Players": []}).execute()
         print(f"[LOGIN] Nouvelle session pour {username}")
 
@@ -338,7 +314,7 @@ def create_session():
             "Players": [], # La liste des joueurs invités (le créateur est stocké séparément)
             "poires": 0,
             "By_Click": 1, 
-            "Expiration": (datetime.utcnow() + timedelta(minutes=60)).isoformat()
+            # LIGNE "Expiration" SUPPRIMÉE ICI
         }
 
         supabase.table("Sessions").insert(new_session_data).execute()
@@ -414,9 +390,8 @@ def change_session():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- Cleanup loop ---
-cleanup_thread = threading.Thread(target=run_cleanup_loop, daemon=True)
-cleanup_thread.start()
+# --- DÉMARRAGE DU SERVEUR ---
+# Le démarrage du thread de nettoyage a été supprimé
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
