@@ -3,7 +3,7 @@ from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import random
-from datetime import datetime, timedelta # Gardé pour d'autres raisons potentielles mais non utilisé pour l'expiration
+from datetime import datetime, timedelta
 import threading
 import time
 import gc
@@ -24,10 +24,6 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 def generate_session_code(length=12):
     chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return "".join(random.choice(chars) for _ in range(length))
-
-# --- LOGIQUE D'EXPIRATION SUPPRIMÉE ---
-# La fonction verify_expiration et run_cleanup_loop ont été supprimées
-# car elles dépendaient de la colonne 'Expiration' qui n'existe plus.
 
 @app.route("/")
 def home():
@@ -74,13 +70,13 @@ def login():
     session_code = generate_session_code()
     existing_session = supabase.table("Sessions").select("*").eq("Creator", username).execute()
     if existing_session.data:
-        # NOTE : Si la colonne 'Expiration' n'existe plus, assurez-vous de ne pas essayer de la mettre à jour ici
-        supabase.table("Sessions").update({"Code": session_code}).eq("Creator", username).execute()
-        print(f"[LOGIN] Session mise à jour pour {username}")
+        # Mise à jour de la session personnelle existante
+        supabase.table("Sessions").update({"Code": session_code, "Players": []}).eq("Creator", username).execute()
+        print(f"[LOGIN] Session personnelle mise à jour pour {username}")
     else:
-        # NOTE : Si la colonne 'Expiration' n'existe plus, assurez-vous de ne pas essayer de l'insérer ici
-        supabase.table("Sessions").insert({"Code": session_code, "Creator": username, "Players": []}).execute()
-        print(f"[LOGIN] Nouvelle session pour {username}")
+        # Création de la session personnelle
+        supabase.table("Sessions").insert({"Code": session_code, "Creator": username, "Players": [], "poires": 0, "By_Click": 1}).execute()
+        print(f"[LOGIN] Nouvelle session personnelle créée pour {username}")
 
     supabase.table("Player").update({"Status": "🟢 online"}).eq("ID", username).execute()
     return jsonify({"status": "success", "code": session_code}), 200
@@ -92,16 +88,18 @@ def my_session():
     if not username:
         return jsonify({"status": "error", "message": "ID utilisateur manquant"}), 400
     try:
+        # Tente de trouver la session où il est créateur (la session personnelle)
         response = supabase.table("Sessions").select("Code").eq("Creator", username).execute()
         sessions = response.data
         if sessions:
             return jsonify({"status": "success", "code": sessions[0]["Code"]}), 200
         else:
+            # Si aucune session personnelle n'existe, retourne une erreur pour forcer /create côté client
             return jsonify({"status": "error", "message": "Aucune session trouvée"}), 404
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- JOIN SESSION ---
+# --- JOIN SESSION (MODIFIÉE) ---
 @app.route("/join", methods=["POST"])
 def join_session():
     data = request.get_json(force=True)
@@ -110,6 +108,7 @@ def join_session():
     if not code or not player_id:
         return jsonify({"status": "error", "message": "Code ou ID manquant"}), 400
     try:
+        # 1. Vérification de la session de destination
         response = supabase.table("Sessions").select("*").eq("Code", code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
@@ -118,25 +117,30 @@ def join_session():
         players = session.get("Players") or []
 
         if isinstance(players, str):
-            try:
-                players = json.loads(players)
-            except:
-                players = []
+            try: players = json.loads(players)
+            except: players = []
 
         if player_id in players:
             return jsonify({"status": "error", "message": "Déjà dans la session"}), 400
-
         if len(players) >= 5:
             return jsonify({"status": "error", "message": "La session est pleine (max 5 joueurs)"}), 400
 
+        # 2. Désactivation de la session personnelle du joueur 
+        # On remplace le code et vide la liste Players de sa session Creator pour que /verify_session ne la trouve plus en priorité
+        supabase.table("Sessions").update({"Code": generate_session_code(20), "Players": []}).eq("Creator", player_id).execute()
+        print(f"[JOIN] Session personnelle de {player_id} désactivée/mise à jour.")
+
+        # 3. Ajout à la nouvelle session
         players.append(player_id)
         supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
+        print(f"[JOIN] {player_id} a rejoint {code}.")
 
         return jsonify({"status": "success", "message": f"{player_id} a rejoint la session", "players": players}), 200
     except Exception as e:
+        print(f"[JOIN ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- LEAVE SESSION ---
+# --- LEAVE SESSION (MODIFIÉE) ---
 @app.route("/leave", methods=["POST"])
 def leave_session():
     data = request.get_json(force=True)
@@ -152,18 +156,37 @@ def leave_session():
         session = response.data[0]
         players = session.get("Players") or []
         if isinstance(players, str):
-            try:
-                players = json.loads(players)
-            except:
-                players = []
-
+            try: players = json.loads(players)
+            except: players = []
+        
         if player_id not in players:
             return jsonify({"status": "error", "message": "Vous n’êtes pas dans cette session"}), 400
 
         players.remove(player_id)
+        
+        # 1. Mise à jour de la session quittée
         supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
+        
+        # 2. Création/Mise à jour de la session personnelle du joueur (réinitialisation)
+        new_personal_code = generate_session_code()
+        existing_personal = supabase.table("Sessions").select("Code").eq("Creator", player_id).execute()
+        
+        update_data = {
+            "Code": new_personal_code, 
+            "Players": [], 
+            "poires": 0, 
+            "By_Click": 1 
+        }
+        
+        if existing_personal.data:
+             supabase.table("Sessions").update(update_data).eq("Creator", player_id).execute()
+        else:
+             supabase.table("Sessions").insert({**update_data, "Creator": player_id}).execute()
+
+        print(f"[LEAVE] {player_id} a quitté {code} et sa session perso est réinitialisée à {new_personal_code}.")
         return jsonify({"status": "success", "message": f"{player_id} a quitté la session", "players": players}), 200
     except Exception as e:
+        print(f"[LEAVE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # --- LOGOUT ---
@@ -180,20 +203,25 @@ def logout():
 
         supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
         response = supabase.table("Sessions").select("*").execute()
+        
+        # Parcourir toutes les sessions pour retirer le joueur des listes 'Players'
         for session in response.data or []:
             players_raw = session.get("Players") or []
             if isinstance(players_raw, str):
-                try:
-                    players = json.loads(players_raw)
-                except:
-                    players = [players_raw]
-            else:
-                players = players_raw
+                try: players = json.loads(players_raw)
+                except: players = [players_raw]
+            else: players = players_raw
+            
             if username in players:
                 players.remove(username)
                 supabase.table("Sessions").update({"Players": players}).eq("Code", session['Code']).execute()
+
+        # Si l'utilisateur est un créateur, on vide sa session personnelle (bonne pratique)
+        supabase.table("Sessions").update({"Players": []}).eq("Creator", username).execute()
+                
         return jsonify({"status": "success", "message": f"{username} est offline et retiré des sessions"}), 200
     except Exception as e:
+        print(f"[LOGOUT ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # --- POIRE CLICK ---
@@ -253,12 +281,9 @@ def get_player():
         creator = session.get("Creator")
 
         if isinstance(players_raw, str):
-            try:
-                players = json.loads(players_raw)
-            except:
-                players = [players_raw]
-        else:
-            players = players_raw
+            try: players = json.loads(players_raw)
+            except: players = [players_raw]
+        else: players = players_raw
 
         if username == creator:
             other_players = [p for p in players if p != creator]
@@ -272,7 +297,6 @@ def get_player():
 def create_session():
     """
     Crée une nouvelle session pour l'utilisateur. 
-    Vérifie d'abord s'il est déjà actif dans une autre.
     """
     data = request.get_json(force=True)
     player_id = (data.get("id") or "").strip()
@@ -292,8 +316,7 @@ def create_session():
             if isinstance(players_raw, str):
                 try: players = json.loads(players_raw)
                 except: players = []
-            else:
-                players = players_raw
+            else: players = players_raw
             
             if session.get("Creator") == player_id or player_id in players:
                 current_session_code = session.get("Code")
@@ -315,7 +338,6 @@ def create_session():
             "Players": [], # La liste des joueurs invités (le créateur est stocké séparément)
             "poires": 0,
             "By_Click": 1, 
-            # LIGNE "Expiration" SUPPRIMÉE ICI
         }
 
         supabase.table("Sessions").insert(new_session_data).execute()
@@ -328,7 +350,7 @@ def create_session():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# --- VERIFY SESSION ---
+# --- VERIFY SESSION (MODIFIÉE pour prioriser Joueur > Créateur) ---
 @app.route("/verify_session", methods=["GET"])
 def verify_session():
     player_id = request.args.get("id", "").strip()
@@ -337,25 +359,51 @@ def verify_session():
     try:
         response = supabase.table("Sessions").select("*").execute()
         sessions = response.data or []
+        
+        # Initialisation
+        found_player_session = None # Pour les sessions rejointes (Priorité 1)
+        found_creator_session = None # Pour la session personnelle (Priorité 2)
+
         for session in sessions:
             players_raw = session.get("Players") or []
             if isinstance(players_raw, str):
-                try:
-                    players = json.loads(players_raw)
-                except:
-                    players = [players_raw]
-            else:
-                players = players_raw
-            if player_id in players or session.get("Creator") == player_id:
-                return jsonify({
-                    "status": "success",
-                    "session_code": session.get("Code"),
-                    "creator": session.get("Creator"),
-                    "players": players
-                }), 200
+                try: players = json.loads(players_raw)
+                except: players = []
+            else: players = players_raw
+            
+            # Priorité 1 : Le joueur est dans la liste 'Players' (il a rejoint)
+            if player_id in players:
+                found_player_session = session
+                break # On trouve la session rejointe, c'est la bonne et on arrête l'itération.
+
+            # Priorité 2 : Le joueur est le 'Creator' (sa session personnelle)
+            if session.get("Creator") == player_id:
+                found_creator_session = session
+                # On ne 'break' pas ici, on continue au cas où il y ait une session 'Players' plus prioritaire après.
+
+        # La session finale est la session rejointe, sinon la session personnelle.
+        final_session = found_player_session or found_creator_session
+        
+        if final_session:
+            # Récupérer la liste des joueurs pour la réponse
+            final_players_raw = final_session.get("Players") or []
+            if isinstance(final_players_raw, str):
+                try: final_players = json.loads(final_players_raw)
+                except: final_players = []
+            else: final_players = final_players_raw
+
+            return jsonify({
+                "status": "success",
+                "session_code": final_session.get("Code"),
+                "creator": final_session.get("Creator"),
+                "players": final_players 
+            }), 200
+            
         return jsonify({"status": "error", "message": "Joueur non trouvé dans aucune session"}), 404
     except Exception as e:
+        print(f"[VERIFY ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # --- CHANGE SESSION ---
 @app.route("/change_session", methods=["POST"])
@@ -374,27 +422,30 @@ def change_session():
         for s in sessions:
             players_raw = s.get("Players") or []
             if isinstance(players_raw, str):
-                try:
-                    players = json.loads(players_raw)
-                except:
-                    players = [players_raw]
-            else:
-                players = players_raw
+                try: players = json.loads(players_raw)
+                except: players = [players_raw]
+            else: players = players_raw
+            
+            # On cherche la session actuelle (Player ou Creator)
             if s.get("Creator") == player_id or player_id in players:
                 session = s
                 break
         if not session:
             return jsonify({"status": "error", "message": "Aucune session trouvée pour ce joueur"}), 404
+            
+        if session.get("Creator") != player_id:
+             return jsonify({"status": "error", "message": "Seul le créateur peut changer le code de session."}), 403
+
         old_session_code = session["Code"]
         supabase.table("Sessions").update({"Code": new_session_name}).eq("Code", old_session_code).execute()
         return jsonify({"status": "success", "message": f"Session changée de '{old_session_code}' à '{new_session_name}'", "new_code": new_session_name}), 200
     except Exception as e:
+        print(f"[CHANGE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # --- DÉMARRAGE DU SERVEUR ---
-# Le démarrage du thread de nettoyage a été supprimé
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     print(f"Serveur démarré sur le port {port}")
     app.run(host="0.0.0.0", port=port)
+    
