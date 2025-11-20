@@ -11,6 +11,10 @@ import time
 from datetime import datetime, timedelta, timezone
 # ---------------------------------------------
 
+# --- CONSTANTE DE LÉNGTH LIMIT ---
+MAX_SESSION_CODE_LENGTH = 14
+# ---------------------------------
+
 app = Flask(__name__)
 CORS(app)
 
@@ -36,23 +40,26 @@ def update_last_seen():
     
     try:
         if request.method in ["POST", "PUT"]:
-            data = request.get_json(force=True)
+            # Utilise get_json(silent=True) pour éviter l'erreur si le corps n'est pas JSON
+            data = request.get_json(silent=True)
             if data:
-                # Tente de trouver l'ID dans le corps JSON (utilisé par /poire, /login, /join, etc.)
-                player_id = (data.get("id") or data.get("player_id") or data.get("username")).strip()
+                # Tente de trouver l'ID dans le corps JSON
+                player_id = (data.get("id") or data.get("player_id") or data.get("username"))
         elif request.method == "GET":
             # Tente de trouver l'ID dans les arguments de l'URL
-            player_id = (request.args.get("id") or request.args.get("user") or request.args.get("username")).strip()
+            player_id = (request.args.get("id") or request.args.get("user") or request.args.get("username"))
             
         if player_id:
-            # Met à jour last_seen ET s'assure que le statut est "🟢 online"
-            supabase.table("Player").update({
-                "last_seen": "now()",
-                "Status": "🟢 online" 
-            }).eq("ID", player_id).execute()
-            
+            player_id = player_id.strip() # S'assurer de nettoyer après l'extraction
+            if player_id: # Vérifie si l'ID n'est pas vide après le strip
+                # Met à jour last_seen ET s'assure que le statut est "🟢 online"
+                supabase.table("Player").update({
+                    "last_seen": "now()",
+                    "Status": "🟢 online" 
+                }).eq("ID", player_id).execute()
+                
     except Exception as e:
-        # Ignore les requêtes qui ne contiennent pas d'ID de joueur ou ne sont pas JSON
+        # print(f"[BEFORE_REQUEST_ERROR] {e}") # Décommenter pour debug
         pass
 
 # ----------------------------------------------------------------------
@@ -86,6 +93,10 @@ def check_player_activity():
 
 
 def generate_session_code(length=12):
+    """Génère un code de session aléatoire de la longueur spécifiée (max 14)."""
+    if length > MAX_SESSION_CODE_LENGTH:
+        length = MAX_SESSION_CODE_LENGTH
+        
     chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return "".join(random.choice(chars) for _ in range(length))
 
@@ -133,7 +144,7 @@ def login():
     if not username or not password:
         return jsonify({"status": "error", "message": "Champs manquants"}), 400
 
-    user = supabase.table("Player").select("*").eq("ID", username).execute()
+    user = supabase.table("Player").select("Password").eq("ID", username).execute()
     if not user.data:
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
@@ -228,7 +239,7 @@ def leave_session():
         if isinstance(players, str):
             try: players = json.loads(players)
             except: players = []
-        
+            
         if player_id not in players:
             return jsonify({"status": "error", "message": "Vous n’êtes pas dans cette session"}), 400
 
@@ -266,7 +277,7 @@ def logout():
         if not user.data:
             return jsonify({"status": "error", "message": "Utilisateur introuvable"}), 404
 
-        # Met le joueur offline (last_seen est géré par le hook)
+        # Met le joueur offline
         supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
         response = supabase.table("Sessions").select("*").execute()
         
@@ -310,8 +321,11 @@ def poire():
         current_poires = session.get("poires", 0)
 
         new_total = current_poires + poires2add
+        # Mise à jour des poires
         supabase.table("Sessions").update({"poires": new_total}).eq("Code", session_code).execute()
+        # Mise à jour du click (peut-être inutile mais conservé)
         supabase.table("Sessions").update({"Click": click}).eq("Code", session_code).execute()
+        
         return jsonify({"status": "success", "added": poires2add, "poires": new_total}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -370,11 +384,23 @@ def create_session():
         return jsonify({"status": "error", "message": "ID utilisateur manquant"}), 400
 
     try:
-        response = supabase.table("Sessions").select("Code,Creator,Players").execute()
-        sessions = response.data or []
+        # Simplification: on vérifie seulement si le joueur est créateur d'une session
+        existing_session = supabase.table("Sessions").select("Code").eq("Creator", player_id).execute()
         
-        current_session_code = None
-        for session in sessions:
+        if existing_session.data:
+             current_session_code = existing_session.data[0]["Code"]
+             return jsonify({
+                 "status": "error", 
+                 "message": f"Vous êtes déjà créateur de la session '{current_session_code}'. Quittez-la d'abord ou rejoignez-la.",
+                 "session_name": current_session_code
+             }), 409
+
+        # Vérification si le joueur est un simple joueur dans une autre session
+        # Note: Cette vérification est coûteuse et non optimale pour une grande base de données.
+        # Idéalement, la colonne Players devrait être une table séparée pour les jointures.
+        # Pour rester proche du code original:
+        response = supabase.table("Sessions").select("Code, Players").execute()
+        for session in response.data or []:
             players_raw = session.get("Players") or []
             players = []
             if isinstance(players_raw, str):
@@ -382,16 +408,13 @@ def create_session():
                 except: players = []
             else: players = players_raw
             
-            if session.get("Creator") == player_id or player_id in players:
-                current_session_code = session.get("Code")
-                break
-
-        if current_session_code:
-            return jsonify({
-                "status": "error", 
-                "message": f"Vous êtes déjà actif dans la session '{current_session_code}'. Quittez-la d'abord.",
-                "session_name": current_session_code
-            }), 409
+            if player_id in players:
+                 current_session_code = session.get("Code")
+                 return jsonify({
+                     "status": "error", 
+                     "message": f"Vous êtes déjà joueur dans la session '{current_session_code}'. Quittez-la d'abord.",
+                     "session_name": current_session_code
+                 }), 409
 
         session_code = generate_session_code()
         
@@ -420,28 +443,26 @@ def verify_session():
     if not player_id:
         return jsonify({"status": "error", "message": "ID manquant"}), 400
     try:
-        response = supabase.table("Sessions").select("*").execute()
-        sessions = response.data or []
-        
-        found_player_session = None
-        found_creator_session = None
-
-        for session in sessions:
-            players_raw = session.get("Players") or []
-            if isinstance(players_raw, str):
-                try: players = json.loads(players_raw)
-                except: players = []
-            else: players = players_raw
-            
-            if player_id in players:
-                found_player_session = session
-                break 
-
-            if session.get("Creator") == player_id:
-                found_creator_session = session
-
-        final_session = found_player_session or found_creator_session
-        
+        # Tente de trouver la session où l'utilisateur est Créateur
+        creator_session_response = supabase.table("Sessions").select("*").eq("Creator", player_id).limit(1).execute()
+        if creator_session_response.data:
+            final_session = creator_session_response.data[0]
+        else:
+            # Tente de trouver la session où l'utilisateur est Joueur (recherche dans l'array 'Players')
+            # C'est une opération lente sans index GIN, mais nous conservons la structure du code original
+            player_session_response = supabase.table("Sessions").select("*").execute()
+            final_session = None
+            for session in player_session_response.data or []:
+                players_raw = session.get("Players") or []
+                if isinstance(players_raw, str):
+                    try: players = json.loads(players_raw)
+                    except: players = []
+                else: players = players_raw
+                
+                if player_id in players:
+                    final_session = session
+                    break
+                    
         if final_session:
             final_players_raw = final_session.get("Players") or []
             if isinstance(final_players_raw, str):
@@ -467,34 +488,52 @@ def verify_session():
 def change_session():
     data = request.get_json(force=True)
     player_id = (data.get("id") or "").strip()
-    new_session_name = (data.get("new_session_name") or "").strip()
-    if not player_id or not new_session_name:
+    new_session_name_raw = (data.get("new_session_name") or "").strip()
+    
+    if not player_id or not new_session_name_raw:
         return jsonify({"status": "error", "message": "ID ou nouveau nom manquant"}), 400
+    
     try:
+        # 1. Troncation du nouveau nom si nécessaire
+        original_name = new_session_name_raw
+        new_session_name = new_session_name_raw[:MAX_SESSION_CODE_LENGTH]
+        
+        was_truncated = len(original_name) > MAX_SESSION_CODE_LENGTH
+        
+        # 2. Vérification de la session actuelle du créateur
+        session_response = supabase.table("Sessions").select("*").eq("Creator", player_id).execute()
+        if not session_response.data:
+            # Vérifie si le joueur est juste joueur dans une session
+            # Note: C'est coûteux, la vérification ci-dessus est suffisante pour un changement de code
+            # puisque seul le créateur peut changer le code.
+            return jsonify({"status": "error", "message": "Aucune session trouvée pour ce joueur (ou vous n'en êtes pas le créateur)"}), 404
+        
+        session = session_response.data[0]
+        old_session_code = session["Code"]
+        
+        # 3. Vérification de l'unicité du nouveau nom tronqué
+        if new_session_name == old_session_code:
+            return jsonify({"status": "error", "message": "Le nouveau nom est identique au code actuel."}), 409
+        
         existing = supabase.table("Sessions").select("*").eq("Code", new_session_name).execute()
         if existing.data:
-            return jsonify({"status": "error", "message": "Ce nom de session est déjà utilisé"}), 409
-        sessions = supabase.table("Sessions").select("*").execute().data or []
-        session = None
-        for s in sessions:
-            players_raw = s.get("Players") or []
-            if isinstance(players_raw, str):
-                try: players = json.loads(players_raw)
-                except: players = [players_raw]
-            else: players = players_raw
-            
-            if s.get("Creator") == player_id or player_id in players:
-                session = s
-                break
-        if not session:
-            return jsonify({"status": "error", "message": "Aucune session trouvée pour ce joueur"}), 404
-            
-        if session.get("Creator") != player_id:
-             return jsonify({"status": "error", "message": "Seul le créateur peut changer le code de session."}), 403
+            return jsonify({"status": "error", "message": f"Ce nom de session '{new_session_name}' est déjà utilisé"}), 409
 
-        old_session_code = session["Code"]
+        # 4. Mise à jour du code
         supabase.table("Sessions").update({"Code": new_session_name}).eq("Code", old_session_code).execute()
-        return jsonify({"status": "success", "message": f"Session changée de '{old_session_code}' à '{new_session_name}'", "new_code": new_session_name}), 200
+        
+        message = f"Session changée de '{old_session_code}' à '{new_session_name}'"
+        if was_truncated:
+            message += f" (Note: le nom original a été tronqué à {MAX_SESSION_CODE_LENGTH} caractères)."
+            
+        print(f"[CHANGE] Session {old_session_code} changée en {new_session_name} par {player_id}.")
+        
+        return jsonify({
+            "status": "success", 
+            "message": message, 
+            "new_code": new_session_name
+        }), 200
+        
     except Exception as e:
         print(f"[CHANGE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
