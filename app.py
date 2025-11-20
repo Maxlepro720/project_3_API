@@ -5,6 +5,11 @@ import os
 import random
 import json
 from flask_cors import CORS
+# --- IMPORTS AJOUTÉS ---
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+# --- FIN DES IMPORTS AJOUTÉS ---
 
 app = Flask(__name__)
 CORS(app)
@@ -20,36 +25,66 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# --- NOUVEAU HOOK : Mettre à jour last_seen avant chaque requête ---
+@app.before_request
+def update_last_seen():
+    """
+    Ce hook s'exécute avant chaque requête.
+    Il essaie de trouver un 'id' ou 'username' et met à jour son 'last_seen'.
+    """
+    player_id = None
+    
+    try:
+        if request.method in ["POST", "PUT"]:
+            data = request.get_json(force=True)
+            if data:
+                # Tente de trouver l'ID dans le corps JSON
+                player_id = (data.get("id") or data.get("player_id") or data.get("username")).strip()
+        elif request.method == "GET":
+            # Tente de trouver l'ID dans les arguments de l'URL
+            player_id = (request.args.get("id") or request.args.get("user") or request.args.get("username")).strip()
+            
+        if player_id:
+            # Utilise "now()" pour que la base de données Postgres insère l'heure UTC actuelle
+            supabase.table("Player").update({"last_seen": "now()"}).eq("ID", player_id).execute()
+            
+    except Exception as e:
+        # Ignore les erreurs (ex: requêtes non-json, routes sans ID comme /)
+        pass
+
+# --- NOUVELLE FONCTION : TÂCHE D'ARRIÈRE-PLAN (L'AUTOMATISME) ---
+def check_player_activity():
+    """
+    Vérifie périodiquement les joueurs inactifs et les met 'offline'.
+    S'exécute dans un thread séparé.
+    """
+    print("[SCHEDULER] Le vérificateur d'activité est démarré.")
+    while True:
+        try:
+            # Calcule le temps de coupure (il y a 15 secondes)
+            # (Supabase utilise UTC)
+            cutoff_time = (datetime.now(timezone.utc) - timedelta(seconds=15)).isoformat()
+            
+            # Trouve tous les joueurs qui sont 'online' MAIS dont le 'last_seen' est plus vieux que 15 sec
+            response = supabase.table("Player") \
+                .update({"Status": "🔴 offline"}) \
+                .eq("Status", "🟢 online") \
+                .lt("last_seen", cutoff_time) \
+                .execute()
+
+            if response.data and len(response.data) > 0:
+                print(f"[SCHEDULER] {len(response.data)} joueur(s) mis hors ligne pour inactivité.")
+
+        except Exception as e:
+            print(f"[SCHEDULER_ERROR] Erreur lors de la vérification d'activité: {e}")
+        
+        # Attend 10 secondes avant la prochaine vérification
+        time.sleep(10)
+
+
 def generate_session_code(length=12):
     chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return "".join(random.choice(chars) for _ in range(length))
-
-# --- FONCTION UTILITAIRE DE NETTOYAGE ---
-def clean_session_if_empty(session_code):
-    """Vérifie si la session est vide (Players est vide) et la détruit."""
-    try:
-        response = supabase.table("Sessions").select("Creator, Players").eq("Code", session_code).execute()
-        if not response.data:
-            return False
-
-        session = response.data[0]
-        players_raw = session.get("Players") or []
-        
-        if isinstance(players_raw, str):
-            try: players = json.loads(players_raw)
-            except: players = []
-        else: players = players_raw
-        
-        if not players:
-            creator = session.get("Creator")
-            supabase.table("Sessions").delete().eq("Code", session_code).execute()
-            print(f"[DESTROY] Session {session_code} (créée par {creator}) détruite car vide.")
-            return True
-            
-        return False
-    except Exception as e:
-        print(f"[CLEAN_ERROR] Erreur lors du nettoyage de session {session_code}: {e}")
-        return False
 
 # ----------------------------------------------------------------------
 
@@ -72,7 +107,13 @@ def signup():
         return jsonify({"status": "error", "message": "Utilisateur déjà existant"}), 409
 
     hashed_pw = generate_password_hash(password)
-    supabase.table("Player").insert({"ID": username, "Password": hashed_pw, "Status": "🔴 offline"}).execute()
+    # Ajout de 'last_seen' à la création
+    supabase.table("Player").insert({
+        "ID": username, 
+        "Password": hashed_pw, 
+        "Status": "🔴 offline",
+        "last_seen": "now()"
+    }).execute()
     print(f"[SIGNUP] {username} créé")
 
     return jsonify({"status": "success", "message": f"Utilisateur {username} ajouté"}), 201
@@ -95,13 +136,11 @@ def login():
     if not check_password_hash(user_data["Password"], password):
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
-    # On ne réinitialise plus le code si la session existe.
     existing_session = supabase.table("Sessions").select("Code").eq("Creator", username).execute()
     if existing_session.data:
         session_code = existing_session.data[0]["Code"]
         print(f"[LOGIN] Session personnelle existante {session_code} trouvée pour {username}")
     else:
-        # La session n'existe pas, on la crée (nouvel utilisateur ou 1ère connexion)
         session_code = generate_session_code()
         supabase.table("Sessions").insert({
             "Code": session_code, 
@@ -112,7 +151,8 @@ def login():
         }).execute()
         print(f"[LOGIN] Nouvelle session personnelle {session_code} créée pour {username}")
 
-    supabase.table("Player").update({"Status": "🟢 online"}).eq("ID", username).execute()
+    # Met à jour le statut ET last_seen
+    supabase.table("Player").update({"Status": "🟢 online", "last_seen": "now()"}).eq("ID", username).execute()
     return jsonify({"status": "success", "code": session_code}), 200
 
 # --- SESSION INFO ---
@@ -156,10 +196,8 @@ def join_session():
         if len(players) >= 5:
             return jsonify({"status": "error", "message": "La session est pleine (max 5 joueurs)"}), 400
 
-        # On ne désactive plus la session personnelle du joueur
         print(f"[JOIN] {player_id} rejoint {code} sans désactiver sa session personnelle.")
 
-        # Ajout à la nouvelle session
         players.append(player_id)
         supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
         print(f"[JOIN] {player_id} a rejoint {code}.")
@@ -169,7 +207,7 @@ def join_session():
         print(f"[JOIN ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- LEAVE SESSION (avec nettoyage) ---
+# --- LEAVE SESSION ---
 @app.route("/leave", methods=["POST"])
 def leave_session():
     data = request.get_json(force=True)
@@ -194,13 +232,8 @@ def leave_session():
 
         players.remove(player_id)
         
-        # 1. Mise à jour de la session quittée
         supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
         
-        # 2. **APPEL À LA DESTRUCTION** : Si la session vient d'être vidée de ses joueurs.
-        clean_session_if_empty(code)
-        
-        # 3. Récupération de la session personnelle du joueur (SANS RÉINITIALISATION)
         new_personal_code = ""
         existing_personal = supabase.table("Sessions").select("Code").eq("Creator", player_id).execute()
         
@@ -215,13 +248,13 @@ def leave_session():
             "status": "success", 
             "message": f"{player_id} a quitté la session", 
             "players": players,
-            "personal_session_code": new_personal_code # On renvoie le code pour le client
+            "personal_session_code": new_personal_code 
         }), 200
     except Exception as e:
         print(f"[LEAVE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- LOGOUT (avec nettoyage) ---
+# --- LOGOUT ---
 @app.route("/logout", methods=["POST"])
 def logout():
     data = request.get_json(force=True)
@@ -233,10 +266,10 @@ def logout():
         if not user.data:
             return jsonify({"status": "error", "message": "Utilisateur introuvable"}), 404
 
+        # Met le joueur offline (le hook @before_request a déjà mis à jour last_seen)
         supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
         response = supabase.table("Sessions").select("*").execute()
         
-        # Parcourir toutes les sessions
         for session in response.data or []:
             session_code = session.get("Code")
             players_raw = session.get("Players") or []
@@ -247,29 +280,31 @@ def logout():
                 except: players = [players_raw]
             else: players = players_raw
             
-            # 1. Retirer l'utilisateur de la liste 'Players' (s'il était joueur dans un groupe)
             if username in players:
                 players.remove(username)
                 supabase.table("Sessions").update({"Players": players}).eq("Code", session_code).execute()
                 print(f"[LOGOUT] {username} retiré de la session de groupe {session_code}")
-                # On vérifie si la session de GROUPE est maintenant vide
-                clean_session_if_empty(session_code)
-                
-            # 2. On ne touche plus à la session personnelle (où Creator == username)
             
         return jsonify({"status": "success", "message": f"{username} est offline et retiré des sessions"}), 200
     except Exception as e:
         print(f"[LOGOUT ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- POIRE CLICK ---
+# --- POIRE CLICK (MODIFIÉ) ---
 @app.route("/poire", methods=["POST"])
 def poire():
     data = request.get_json(force=True)
     session_code = (data.get("session") or "").strip()
     click = (data.get("click") or 0)
-    if not session_code:
-        return jsonify({"status": "error", "message": "Session manquante"}), 400
+    
+    # **AJOUT IMPORTANT**
+    # Le hook @before_request a besoin de l'ID du joueur pour le garder "online"
+    # Votre client DOIT maintenant envoyer le 'id' du joueur qui clique.
+    player_id = (data.get("id") or "").strip() 
+    
+    if not session_code or not player_id:
+        return jsonify({"status": "error", "message": "Session ou ID joueur manquant"}), 400
+    
     try:
         response = supabase.table("Sessions").select("*").eq("Code", session_code).execute()
         if not response.data:
@@ -404,12 +439,10 @@ def verify_session():
                 except: players = []
             else: players = players_raw
             
-            # Priorité 1 : Le joueur est dans la liste 'Players' (il a rejoint)
             if player_id in players:
                 found_player_session = session
                 break 
 
-            # Priorité 2 : Le joueur est le 'Creator' (sa session personnelle)
             if session.get("Creator") == player_id:
                 found_creator_session = session
 
@@ -472,44 +505,14 @@ def change_session():
         print(f"[CHANGE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- DESTRUCTION EXPLICITE (non utilisée par le client mais demandée précédemment) ---
-@app.route("/destroy_session", methods=["POST"])
-def destroy_session():
-    data = request.get_json(force=True)
-    code = (data.get("code") or "").strip()
-    creator_id = (data.get("creator_id") or "").strip()
-    
-    if not code or not creator_id:
-        return jsonify({"status": "error", "message": "Code ou ID créateur manquant"}), 400
-        
-    try:
-        response = supabase.table("Sessions").select("Creator, Players").eq("Code", code).eq("Creator", creator_id).execute()
-        if not response.data:
-            return jsonify({"status": "error", "message": "Session introuvable ou vous n'êtes pas le créateur."}), 404
-            
-        session = response.data[0]
-        players_raw = session.get("Players") or []
-        
-        if isinstance(players_raw, str):
-            try: players = json.loads(players_raw)
-            except: players = []
-        else: players = players_raw
-        
-        if players:
-            return jsonify({"status": "warning", "message": "Impossible de détruire : des joueurs sont toujours dans la session."}), 403
-            
-        supabase.table("Sessions").delete().eq("Code", code).execute()
-        print(f"[DESTROY_API] Session {code} (créée par {creator_id}) détruite via l'API.")
-        
-        return jsonify({"status": "success", "message": f"Session {code} détruite."}), 200
-        
-    except Exception as e:
-        print(f"[DESTROY_ERROR] Erreur lors de la destruction de session {code}: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
 # --- DÉMARRAGE DU SERVEUR ---
 if __name__ == "__main__":
+    # --- DÉMARRAGE DU THREAD D'ARRIÈRE-PLAN ---
+    # daemon=True fait en sorte que le thread s'arrête quand le serveur principal s'arrête
+    activity_thread = threading.Thread(target=check_player_activity, daemon=True)
+    activity_thread.start()
+    # --- FIN DU DÉMARRAGE DU THREAD ---
+    
     port = int(os.environ.get("PORT", 10000))
     print(f"Serveur démarré sur le port {port}")
     app.run(host="0.0.0.0", port=port)
