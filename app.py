@@ -358,13 +358,18 @@ def get_poires():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # --- GET PLAYER ---
+import json # Assurez-vous d'importer la bibliothèque json
+
 @app.route("/get_player", methods=["GET"])
 def get_player():
     username = request.args.get("username", "").strip()
     session_code = request.args.get("session_code", "").strip()
+    
     if not username or not session_code:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
+    
     try:
+        # 1. Récupération des données
         response = supabase.table("Sessions").select("*").eq("Code", session_code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
@@ -372,19 +377,30 @@ def get_player():
         session = response.data[0]
         players_raw = session.get("Players") or []
         creator = session.get("Creator")
-
+        
+        # 2. Désérialisation (inchangée)
         if isinstance(players_raw, str):
             try: players = json.loads(players_raw)
             except: players = [players_raw]
         else: players = players_raw
+        
+        # 3. Vérification si 'players' est bien une liste
+        if not isinstance(players, list):
+             players = []
 
-        # Si l'utilisateur est le créateur, retourne la liste des joueurs (excluant lui-même)
-        if username == creator:
-            other_players = [p for p in players if p != creator]
-            return jsonify({"status": "success", "player": other_players}), 200
-        # Si l'utilisateur est un joueur, retourne le nom du créateur
-        else:
-            return jsonify({"status": "success", "player": creator}), 200
+        # 4. 💡 CORRECTION : Renvoi d'un format uniforme
+        # Le client (votre fonction updatePlayersList) a besoin de :
+        # - La liste des joueurs (Array)
+        # - Le nom du créateur (String)
+        # - Le code de la session (String)
+        
+        return jsonify({
+            "status": "success",
+            "session_code": session_code,
+            "creator": creator,       # Nom du créateur (String)
+            "players": players        # Liste complète des joueurs (Array)
+        }), 200
+        
     except Exception as e:
         print(f"[GET PLAYER ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
