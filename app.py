@@ -551,6 +551,65 @@ def change_session():
         print(f"[CHANGE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+# --- VERIFY PLAYER IN SESSION (Basé sur le code de session) ---
+@app.route("/verify_player_in_session", methods=["GET"])
+def verify_player_in_session():
+    """
+    Vérifie l'état d'une session spécifique (session_code)
+    et confirme si le joueur (username) y participe.
+    Retourne la liste complète des joueurs et le créateur.
+    """
+    session_code = request.args.get("session_code", "").strip()
+    player_id = request.args.get("username", "").strip() # L'ID est utilisé pour confirmer l'appartenance
+    
+    if not player_id or not session_code:
+        return jsonify({"status": "error", "message": "ID ou Code de session manquant"}), 400
+        
+    try:
+        # 1. Récupération de la session par son code
+        session_response = supabase.table("Sessions").select("*").eq("Code", session_code).limit(1).execute()
+        
+        if not session_response.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+            
+        final_session = session_response.data[0]
+        
+        final_players_raw = final_session.get("Players") or []
+        creator = final_session.get("Creator")
+
+        # 2. Désérialisation de la liste des joueurs
+        if isinstance(final_players_raw, str):
+            try: final_players = json.loads(final_players_raw)
+            except: final_players = []
+        else: final_players = final_players_raw
+
+        # 3. Vérification que le joueur fait partie de cette session
+        is_creator = player_id == creator
+        is_player = player_id in final_players
+        
+        if not is_creator and not is_player:
+            # Si la session existe, mais le joueur n'y est ni créateur ni joueur
+            print(f"[VERIFY_PLAYER] {player_id} n'est pas dans la session {session_code}.")
+            return jsonify({
+                "status": "error", 
+                "message": "Joueur non trouvé dans la session spécifiée",
+                "session_code": session_code # Pour aider le débogage côté client
+            }), 404
+
+        # 4. Succès : Retourne les informations complètes de la session
+        print(f"[VERIFY_PLAYER] {player_id} vérifié dans la session {session_code}.")
+        return jsonify({
+            "status": "success",
+            "session_code": session_code,
+            "creator": creator,
+            "players": final_players 
+        }), 200
+        
+    except Exception as e:
+        print(f"[VERIFY_PLAYER ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
 # ----------------------------------------------------------------------
