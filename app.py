@@ -5,16 +5,19 @@ import os
 import random
 import json
 from flask_cors import CORS
-# Note: threading, time, datetime, timedelta, timezone ne sont plus utilisés dans ce script mais conservés pour les imports
+# Les imports de threading et de temps sont conservés pour la complétude
 import threading
 import time
 from datetime import datetime, timedelta, timezone 
 
+# --- CONSTANTE DE LÉNGTH LIMIT ---
 MAX_SESSION_CODE_LENGTH = 14
+# ---------------------------------
 
 app = Flask(__name__)
 CORS(app)
 
+# NOTE : Assurez-vous que ces variables d'environnement sont bien définies
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
@@ -28,11 +31,41 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ----------------------------------------------------------------------
 
 def generate_session_code(length=12):
+    """Génère un code de session aléatoire de la longueur spécifiée (max 14)."""
     if length > MAX_SESSION_CODE_LENGTH:
         length = MAX_SESSION_CODE_LENGTH
         
     chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return "".join(random.choice(chars) for _ in range(length))
+
+# --- LOGIQUE DE RENOMMAGE (POUR /change_session) ---
+def rename_session_logic(player_id, old_code, new_code):
+    """Logique pour renommer une session si l'utilisateur est le créateur."""
+    if not old_code or not new_code or not player_id:
+        return {"status": "error", "message": "Paramètres manquants"}, 400
+    
+    if old_code == new_code:
+        return {"status": "error", "message": "Le nouveau code doit être différent de l'ancien."}, 400
+
+    # 1. Vérifier si le joueur est le créateur de la session actuelle
+    current_session_query = supabase.table("Sessions").select("Code, Creator").eq("Code", old_code).eq("Creator", player_id).execute()
+    if not current_session_query.data:
+        # Peut-être n'est pas le créateur ou la session n'existe pas
+        return {"status": "error", "message": "Session non trouvée ou vous n'êtes pas le créateur."}, 403
+
+    # 2. Vérifier si le nouveau code est déjà pris
+    check_new_code_query = supabase.table("Sessions").select("Code").eq("Code", new_code).execute()
+    if check_new_code_query.data:
+        return {"status": "error", "message": f"Le code de session '{new_code}' est déjà utilisé."}, 409
+
+    # 3. Mettre à jour le code de la session
+    try:
+        supabase.table("Sessions").update({"Code": new_code}).eq("Code", old_code).eq("Creator", player_id).execute()
+        print(f"[RENAME] Session {old_code} renommée en {new_code} par {player_id}")
+        return {"status": "success", "message": f"Session renommée en '{new_code}'"}, 200
+    except Exception as e:
+        print(f"[RENAME ERROR] {e}")
+        return {"status": "error", "message": str(e)}, 500
 
 # ----------------------------------------------------------------------
 # --- ROUTES FLASK ---
@@ -147,7 +180,6 @@ def join_session():
         supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
         print(f"[JOIN] {player_id} a rejoint {code}.")
 
-        # Note: La réponse doit inclure "players" pour correspondre à votre format d'origine
         return jsonify({"status": "success", "message": f"{player_id} a rejoint la session", "players": players}), 200
     except Exception as e:
         print(f"[JOIN ERROR] {e}")
@@ -210,8 +242,10 @@ def logout():
         if not user.data:
             return jsonify({"status": "error", "message": "Utilisateur introuvable"}), 404
 
+        # Met le joueur offline
         supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
         
+        # Retire le joueur de toutes les sessions où il est joueur
         response = supabase.table("Sessions").select("*").execute()
         
         for session in response.data or []:
@@ -233,7 +267,7 @@ def logout():
         print(f"[LOGOUT ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- POIRE CLICK (CORRIGÉ POUR ÉVITER L'ERREUR 500 SQL) ---
+# --- POIRE CLICK (Correction de l'ajout numérique) ---
 @app.route("/poire", methods=["POST"])
 def poire():
     data = request.get_json(force=True)
@@ -245,25 +279,21 @@ def poire():
         return jsonify({"status": "error", "message": "Session ou ID joueur manquant"}), 400
     
     try:
-        # LECTURE DE LA VALEUR ACTUELLE (CORRIGE L'ERREUR 500)
+        # LECTURE DE LA VALEUR ACTUELLE
         response = supabase.table("Sessions").select("*").eq("Code", session_code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
         session = response.data[0]
         by_click = session.get("By_Click", 1)
-        poires2add = by_click * int(click)
+        poires2add = by_click * int(click) 
         current_poires = session.get("poires", 0)
 
         new_total = current_poires + poires2add
         
-        # ÉCRITURE DE LA NOUVELLE VALEUR NUMÉRIQUE (CORRIGE L'ERREUR SQL)
+        # ÉCRITURE DE LA NOUVELLE VALEUR NUMÉRIQUE
         supabase.table("Sessions").update({"poires": new_total}).eq("Code", session_code).execute()
-        # Mise à jour du click (conservé si nécessaire par votre client)
-        # Note: 'Click' n'existe pas par défaut dans la table Sessions, vérifiez si cette ligne est nécessaire.
-        # supabase.table("Sessions").update({"Click": click}).eq("Code", session_code).execute()
         
-        # Récupération de la valeur finale (pour plus de précision)
         new_total_response = supabase.table("Sessions").select("poires").eq("Code", session_code).execute()
         new_total_final = new_total_response.data[0].get("poires", new_total) if new_total_response.data else new_total
 
@@ -289,10 +319,9 @@ def get_poires():
         print(f"[GET POIRES ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- VERIFY PLAYER IN SESSION (CORRECTION DU 404) ---
-# Le nom de la route est changé pour correspondre à la requête client que vous utilisez
-@app.route("/verify_player_in_session", methods=["GET"]) 
-def verify_player_in_session():
+# --- GET PLAYER (Pour /verify_player_in_session) ---
+@app.route("/get_player", methods=["GET"])
+def get_player():
     username = request.args.get("username", "").strip()
     session_code = request.args.get("session_code", "").strip()
     if not username or not session_code:
@@ -311,23 +340,19 @@ def verify_player_in_session():
             except: players = [players_raw]
         else: players = players_raw
         
-        # Vérifie si le joueur est effectivement dans la session (créateur ou joueur)
         is_in_session = (username == creator) or (username in players)
-
         if not is_in_session:
             return jsonify({"status": "error", "message": "Joueur non membre de cette session"}), 403
 
         # Si l'utilisateur est le créateur, retourne la liste des joueurs (excluant lui-même)
         if username == creator:
-            # Note: Si le créateur n'est pas dans la liste 'Players', on l'ajoute temporairement pour la vérification
             other_players = [p for p in players if p != creator]
-            return jsonify({"status": "success", "player": other_players, "creator": creator}), 200
+            return jsonify({"status": "success", "player": other_players}), 200
         # Si l'utilisateur est un joueur, retourne le nom du créateur
         else:
-            return jsonify({"status": "success", "player": creator, "creator": creator}), 200
-            
+            return jsonify({"status": "success", "player": creator}), 200
     except Exception as e:
-        print(f"[VERIFY PLAYER ERROR] {e}")
+        print(f"[GET PLAYER ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # --- CREATE SESSION ---
@@ -340,19 +365,21 @@ def create_session():
         return jsonify({"status": "error", "message": "ID utilisateur manquant"}), 400
 
     try:
-        # Vérification si le joueur est créateur d'une session ou joueur dans une autre session
-        creator_session = supabase.table("Sessions").select("Code").eq("Creator", player_id).execute()
+        # Vérification si le joueur est créateur d'une session
+        existing_session = supabase.table("Sessions").select("Code").eq("Creator", player_id).execute()
         
-        if creator_session.data:
-            current_session_code = creator_session.data[0]["Code"]
+        if existing_session.data:
+            current_session_code = existing_session.data[0]["Code"]
+            print(f"[CREATE ERROR] {player_id} tente de créer une session mais est déjà créateur de {current_session_code}")
             return jsonify({
                 "status": "error", 
-                "message": f"Vous êtes déjà créateur de la session '{current_session_code}'.",
+                "message": f"Vous êtes déjà créateur de la session '{current_session_code}'. Quittez-la d'abord ou rejoignez-la.",
                 "session_name": current_session_code
             }), 409
 
-        player_in_other_session = supabase.table("Sessions").select("Code, Players").execute()
-        for session in player_in_other_session.data or []:
+        # Vérification si le joueur est un simple joueur dans une autre session
+        response = supabase.table("Sessions").select("Code, Players").execute()
+        for session in response.data or []:
             players_raw = session.get("Players") or []
             players = []
             if isinstance(players_raw, str):
@@ -362,9 +389,10 @@ def create_session():
             
             if player_id in players:
                 current_session_code = session.get("Code")
+                print(f"[CREATE ERROR] {player_id} tente de créer une session mais est déjà joueur dans {current_session_code}")
                 return jsonify({
                     "status": "error", 
-                    "message": f"Vous êtes déjà joueur dans la session '{current_session_code}'.",
+                    "message": f"Vous êtes déjà joueur dans la session '{current_session_code}'. Quittez-la d'abord.",
                     "session_name": current_session_code
                 }), 409
 
@@ -388,7 +416,7 @@ def create_session():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# --- VERIFY SESSION ---
+# --- VERIFY SESSION (Priorité Créateur > Joueur) ---
 @app.route("/verify_session", methods=["GET"])
 def verify_session():
     player_id = request.args.get("id", "").strip()
@@ -397,10 +425,12 @@ def verify_session():
     try:
         final_session = None
         
+        # 1. Tente de trouver la session où l'utilisateur est Créateur
         creator_session_response = supabase.table("Sessions").select("*").eq("Creator", player_id).limit(1).execute()
         if creator_session_response.data:
             final_session = creator_session_response.data[0]
         else:
+            # 2. Tente de trouver la session où l'utilisateur est Joueur
             player_session_response = supabase.table("Sessions").select("*").execute()
             for session in player_session_response.data or []:
                 players_raw = session.get("Players") or []
@@ -434,11 +464,17 @@ def verify_session():
         print(f"[VERIFY ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- CHANGE SESSION (Correction du 404/CORS) ---
+# --- CHANGE SESSION (MAINTENANT POUR LE RENOMMAGE) ---
 @app.route("/change_session", methods=["POST"])
-def change_session():
-    # Cette route appelle simplement la logique de join_session
-    return join_session() 
+def change_session_route():
+    data = request.get_json(force=True)
+    player_id = (data.get("id") or "").strip()
+    old_code = (data.get("old_code") or "").strip() # Code actuel de la session
+    new_code = (data.get("new_code") or "").strip() # Nouveau code souhaité
+
+    result, status_code = rename_session_logic(player_id, old_code, new_code)
+    return jsonify(result), status_code
+
 
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
