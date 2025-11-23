@@ -482,12 +482,12 @@ def upgrades_price():
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
 
     try:
-        # Conversion sécurisée du paramètre base_price
+        # Correction : supprimer les underscores et convertir en float
         base_price_param = str(base_price_param).replace("_", "")
         try:
             base_price_param = float(base_price_param)
         except ValueError:
-            base_price_param = 100.0  # fallback
+            base_price_param = 100.0  # fallback si conversion impossible
 
         # Récupérer les upgrades de la session
         response = supabase.table("Sessions").select("upgrades").eq("Code", session_code).execute()
@@ -511,6 +511,7 @@ def upgrades_price():
     except Exception as e:
         print(f"[UPGRADES PRICE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 
