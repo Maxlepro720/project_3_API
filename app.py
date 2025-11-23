@@ -439,72 +439,83 @@ def get_personnel_boost():
 
 @app.route("/upgrade_add", methods=["POST"])
 def upgrade_add_session():
-    """Ajoute une valeur (float) au By_Click (float) de la session après vérification du coût."""
     data = request.get_json(force=True)
     session_code = (data.get("session") or "").strip()
     upgrade_value = data.get("upgrade")
     price = data.get("price")
     quantity = data.get("quantity")
+    upgrade_name = (data.get("upgrade_name") or "").strip()
     
-    if not session_code or upgrade_value is None or price is None or quantity is None:
+    if not session_code or upgrade_value is None or price is None or quantity is None or not upgrade_name:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
     
     try:
         upgrade_value = float(upgrade_value)
         price = float(price)
         quantity = int(quantity)
-        
         TOTAL_COST = price * quantity
         
-        response = supabase.table("Sessions").select("By_Click, poires").eq("Code", session_code).execute()
+        response = supabase.table("Sessions").select("By_Click, poires, upgrades").eq("Code", session_code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
         session_data = response.data[0]
         current_by_click = float(session_data.get("By_Click", 1.0))
         current_poires = float(session_data.get("poires", 0))
+        upgrades = initialize_upgrades_json(session_data.get("upgrades"))
 
         if current_poires < TOTAL_COST:
             return jsonify({"status": "error", "message": f"Fonds insuffisants. Coût: {TOTAL_COST}"}), 400
 
+        # Mettre à jour By_Click
         new_by_click = current_by_click + upgrade_value * quantity
         new_poires = current_poires - TOTAL_COST
 
+        # Mettre à jour le nombre acheté pour l'upgrade
+        upgrades[upgrade_name]["bought"] += quantity
+
         supabase.table("Sessions").update({
             "By_Click": new_by_click,
-            "poires": int(round(new_poires))
+            "poires": int(round(new_poires)),
+            "upgrades": upgrades
         }).eq("Code", session_code).execute()
 
-        return jsonify({"status": "success", "new_by_click": new_by_click, "new_poires": new_poires}), 200
+        return jsonify({
+            "status": "success",
+            "new_by_click": new_by_click,
+            "new_poires": new_poires,
+            "upgrades": upgrades
+        }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/upgrade_multiply", methods=["POST"])
 def upgrade_multiply_session():
-    """Multiplie le By_Click (float) de la session par une valeur (float) après vérification du coût."""
     data = request.get_json(force=True)
     session_code = (data.get("session") or "").strip()
     upgrade_multiplier_base = data.get("upgrade")
     price = data.get("price")
     quantity = data.get("quantity")
+    upgrade_name = (data.get("upgrade_name") or "").strip()
     
-    if not session_code or upgrade_multiplier_base is None or price is None or quantity is None:
+    if not session_code or upgrade_multiplier_base is None or price is None or quantity is None or not upgrade_name:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
     
     try:
         upgrade_multiplier_base = float(upgrade_multiplier_base)
         price = float(price)
         quantity = int(quantity)
-        
         TOTAL_COST = price * quantity
         
-        response = supabase.table("Sessions").select("By_Click, poires").eq("Code", session_code).execute()
+        response = supabase.table("Sessions").select("By_Click, poires, upgrades").eq("Code", session_code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
         session_data = response.data[0]
         current_by_click = float(session_data.get("By_Click", 1.0))
         current_poires = float(session_data.get("poires", 0))
+        upgrades = initialize_upgrades_json(session_data.get("upgrades"))
 
         if current_poires < TOTAL_COST:
             return jsonify({"status": "error", "message": f"Fonds insuffisants. Coût: {TOTAL_COST}"}), 400
@@ -513,12 +524,56 @@ def upgrade_multiply_session():
         new_by_click = current_by_click * total_multiplier
         new_poires = current_poires - TOTAL_COST
 
+        upgrades[upgrade_name]["bought"] += quantity
+
         supabase.table("Sessions").update({
             "By_Click": new_by_click,
-            "poires": int(round(new_poires))
+            "poires": int(round(new_poires)),
+            "upgrades": upgrades
         }).eq("Code", session_code).execute()
 
-        return jsonify({"status": "success", "new_by_click": new_by_click, "new_poires": new_poires}), 200
+        return jsonify({
+            "status": "success",
+            "new_by_click": new_by_click,
+            "new_poires": new_poires,
+            "upgrades": upgrades
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# -----------------------------------
+# Route upgrades_price : prix de tous
+# -----------------------------------
+@app.route("/upgrades_price", methods=["GET"])
+def upgrades_price():
+    """
+    Retourne le prix actuel de tous les upgrades au format JSON :
+    {"upgrade1": price1, "upgrade2": price2, ...}
+    """
+    session_code = (request.args.get("session") or "").strip()
+    base_price = request.args.get("base_price")
+    
+    if not session_code or base_price is None:
+        return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
+    
+    try:
+        base_price = float(base_price)
+        response = supabase.table("Sessions").select("upgrades").eq("Code", session_code).execute()
+        if not response.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+
+        upgrades = initialize_upgrades_json(response.data[0].get("upgrades"))
+        prices = {}
+        for name, info in upgrades.items():
+            bought = info.get("bought", 0)
+            multiplier = info.get("multiplier", 1.15)
+            prices[name] = round(base_price * (multiplier ** bought), 2)
+
+        return jsonify({
+            "status": "success",
+            "upgrades_price": prices
+        }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
