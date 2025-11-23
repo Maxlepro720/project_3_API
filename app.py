@@ -491,15 +491,19 @@ def get_personnel_boost():
 from decimal import Decimal
 from flask import request, jsonify
 
-@app.route("/upgrades_price", methods=["POST"])
+@app.route("/upgrades_price", methods=["GET"])
 def upgrades_price():
     """
     Retourne le prix actuel de tous les upgrades au format JSON :
     {"upgrade1": price1, "upgrade2": price2, ...}
     """
-    data = request.json
+
     session_code = request.args.get("session", "").strip()
-    base_prices = data.get("base_prices", {})
+    base_prices_json = request.args.get("base_prices", "{}")  # base_prices passé en JSON string
+    try:
+        base_prices = json.loads(base_prices_json)
+    except Exception:
+        base_prices = {}
 
     if not session_code or not base_prices:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
@@ -526,8 +530,6 @@ def upgrades_price():
 
             # Calcul du prix dynamique
             new_price = base_price * (multiplier ** bought)
-
-            # On renvoie en string pour JS, pour éviter perte de précision
             prices[name] = str(new_price.quantize(Decimal("1.00")))
 
         return jsonify({
