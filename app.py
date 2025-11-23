@@ -15,7 +15,7 @@ MAX_PLAYERS_PER_SESSION = 5
 # ---------------------------------
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 # NOTE : Assurez-vous que ces variables d'environnement sont bien définies
 # Les variables d'environnement sont nécessaires pour que Supabase fonctionne.
@@ -41,6 +41,12 @@ def generate_session_code(length=5):
 # ----------------------------------------------------------------------
 # --- UTILITIES SUPPLÉMENTAIRES ---
 # ----------------------------------------------------------------------
+def build_cors_preflight_response():
+    response = app.make_response("")
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+    return response
 
 def initialize_upgrades_json(upgrades_raw):
     """
@@ -181,8 +187,11 @@ def home():
 
 ## --- AUTHENTIFICATION ---
 
-@app.route("/signup", methods=["POST"])
+@app.route("/signup", methods=["POST", "OPTIONS"])
 def signup():
+    if request.method == "OPTIONS":
+        return build_cors_preflight_response()
+
     data = request.get_json(force=True)
     username = (data.get("id") or "").strip()
     password = (data.get("password") or "").strip()
@@ -199,14 +208,20 @@ def signup():
         "ID": username, 
         "Password": hashed_pw, 
         "Status": "🔴 offline",
-        "personnel_upgrade": 1.0, # Float par défaut
+        "personnel_upgrade": 1.0
     }).execute()
     print(f"[SIGNUP] {username} créé")
 
-    return jsonify({"status": "success", "message": f"Utilisateur {username} ajouté"}), 201
+    response = jsonify({"status": "success", "message": f"Utilisateur {username} ajouté"})
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response, 201
 
-@app.route("/login", methods=["POST"])
+
+@app.route("/login", methods=["POST", "OPTIONS"])
 def login():
+    if request.method == "OPTIONS":
+        return build_cors_preflight_response()
+
     data = request.get_json(force=True)
     username = (data.get("id") or "").strip()
     password = (data.get("password") or "").strip()
@@ -222,7 +237,6 @@ def login():
     if not check_password_hash(user_data["Password"], password):
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
-    # Assure l'existence de la session personnelle
     existing_session = supabase.table("Sessions").select("Code").eq("Creator", username).execute()
     if not existing_session.data:
         session_code = generate_session_code()
@@ -231,24 +245,28 @@ def login():
             "Creator": username, 
             "Players": [],  
             "poires": 0, 
-            "By_Click": 1.0 # Float par défaut
+            "By_Click": 1.0
         }).execute()
-        print(f"[LOGIN] Session personnelle {session_code} créée pour {username} (Creator).")
+        print(f"[LOGIN] Session personnelle {session_code} créée pour {username}")
     else:
         session_code = existing_session.data[0]["Code"]
-        # Nettoyage: s'assurer qu'il n'est pas dans la liste Players 
         session_data = supabase.table("Sessions").select("Players").eq("Code", session_code).limit(1).execute().data[0]
         players = get_players_list(session_data)
         if username in players:
-             players.remove(username)
-             supabase.table("Sessions").update({"Players": players}).eq("Code", session_code).execute()
-             print(f"[LOGIN] {username} retiré de la liste de joueurs de sa session personnelle (Créateur).")
+            players.remove(username)
+            supabase.table("Sessions").update({"Players": players}).eq("Code", session_code).execute()
+            print(f"[LOGIN] {username} retiré de la liste de joueurs de sa session personnelle")
 
     print(f"[LOGIN] {username} connecté.")
-    return jsonify({"status": "success", "message": f"Connexion réussie pour {username}"}), 200
+    response = jsonify({"status": "success", "message": f"Connexion réussie pour {username}"})
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response, 200
 
-@app.route("/logout", methods=["POST"])
+@app.route("/logout", methods=["POST", "OPTIONS"])
 def logout():
+    if request.method == "OPTIONS":
+        return build_cors_preflight_response()
+
     data = request.get_json(force=True)
     username = (data.get("id") or "").strip()
     if not username:
@@ -258,65 +276,66 @@ def logout():
         if not user.data:
             return jsonify({"status": "error", "message": "Utilisateur introuvable"}), 404
 
-        # 1. Met le joueur offline
         supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
-
-        # 2. Retire le joueur de toutes les listes "Players"
         response = supabase.table("Sessions").select("Code, Players").execute()
         for session in response.data or []:
             session_code = session.get("Code")
             players = get_players_list(session)
-            
             if username in players:
                 players.remove(username)
                 supabase.table("Sessions").update({"Players": players}).eq("Code", session_code).execute()
 
-        print(f"[LOGOUT] {username} déconnecté et retiré des listes de joueurs.")
-        return jsonify({"status": "success", "message": f"{username} est offline et retiré des sessions"}), 200
+        print(f"[LOGOUT] {username} déconnecté")
+        response = jsonify({"status": "success", "message": f"{username} est offline et retiré des sessions"})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        return response, 200
     except Exception as e:
         print(f"[LOGOUT ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 ## --- GESTION DE SESSION ---
 
-@app.route("/create", methods=["POST"])
+@app.route("/create", methods=["POST", "OPTIONS"])
 def create_session():
+    if request.method == "OPTIONS":
+        return build_cors_preflight_response()
+
     data = request.get_json(force=True)
     player_id = (data.get("id") or "").strip()
-    
     if not player_id:
         return jsonify({"status": "error", "message": "ID utilisateur manquant"}), 400
 
     try:
         existing_session_response = supabase.table("Sessions").select("Code").eq("Creator", player_id).limit(1).execute()
-        
         if existing_session_response.data:
             session_code = existing_session_response.data[0]["Code"]
             print(f"[CREATE] Session personnelle existante pour {player_id}: {session_code}")
-            return jsonify({
+            response = jsonify({
                 "status": "success", 
                 "message": "Session personnelle existante chargée.",
                 "session_name": session_code
-            }), 200 
-        
-        session_code = generate_session_code(length=5) 
-        
+            })
+            response.headers.add("Access-Control-Allow-Origin", "*")
+            return response, 200
+
+        session_code = generate_session_code(length=5)
         new_session_data = {
             "Code": session_code,
             "Creator": player_id,
-            "Players": [], 
+            "Players": [],
             "poires": 0,
-            "By_Click": 1.0, 
+            "By_Click": 1.0
         }
-
         supabase.table("Sessions").insert(new_session_data).execute()
-        print(f"[CREATE] Nouvelle session personnelle {session_code} créée par {player_id} (Creator)")
-        
-        return jsonify({"status": "success", "session_name": session_code}), 201
-        
+        print(f"[CREATE] Nouvelle session {session_code} créée par {player_id}")
+        response = jsonify({"status": "success", "session_name": session_code})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        return response, 201
     except Exception as e:
         print(f"[CREATE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route("/join", methods=["POST"])
 def join_session():
