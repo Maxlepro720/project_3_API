@@ -469,57 +469,49 @@ def get_personnel_boost():
 # --- ROUTES D'AMÉLIORATION (COÛT DYNAMIQUE) CORRIGÉES ---
 # ----------------------------------------------------------------------
 
-@app.route("/upgrade_add", methods=["POST"])
-def upgrade_add_session():
-    data = request.get_json(force=True)
-    session_code = (data.get("session") or "").strip()
-    upgrade_value = data.get("upgrade")
-    price = data.get("price")
-    quantity = data.get("quantity")
-    upgrade_name = (data.get("upgrade_name") or "").strip()
-    
-    if not session_code or upgrade_value is None or price is None or quantity is None or not upgrade_name:
+@app.route("/upgrades_price", methods=["GET"])
+def upgrades_price():
+    """
+    Retourne le prix actuel de tous les upgrades au format JSON :
+    {"upgrade1": price1, "upgrade2": price2, ...}
+    """
+    session_code = (request.args.get("session") or "").strip()
+    base_price_param = request.args.get("base_price")
+
+    if not session_code or base_price_param is None:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
-    
+
     try:
-        upgrade_value = float(upgrade_value)
-        price = float(price)
-        quantity = int(quantity)
-        TOTAL_COST = price * quantity
-        
-        response = supabase.table("Sessions").select("By_Click, poires, upgrades").eq("Code", session_code).execute()
+        # Conversion sécurisée du paramètre base_price
+        base_price_param = str(base_price_param).replace("_", "")
+        try:
+            base_price_param = float(base_price_param)
+        except ValueError:
+            base_price_param = 100.0  # fallback
+
+        # Récupérer les upgrades de la session
+        response = supabase.table("Sessions").select("upgrades").eq("Code", session_code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
-        session_data = response.data[0]
-        current_by_click = float(session_data.get("By_Click", 1.0))
-        current_poires = float(session_data.get("poires", 0))
-        upgrades = initialize_upgrades_json(session_data.get("upgrades"))
+        upgrades = initialize_upgrades_json(response.data[0].get("upgrades"))
+        prices = {}
 
-        if current_poires < TOTAL_COST:
-            return jsonify({"status": "error", "message": f"Fonds insuffisants. Coût: {TOTAL_COST}"}), 400
-
-        # Mettre à jour By_Click
-        new_by_click = current_by_click + upgrade_value * quantity
-        new_poires = current_poires - TOTAL_COST
-
-        # Mettre à jour le nombre acheté pour l'upgrade
-        upgrades[upgrade_name]["bought"] += quantity
-
-        supabase.table("Sessions").update({
-            "By_Click": new_by_click,
-            "poires": int(round(new_poires)),
-            "upgrades": upgrades
-        }).eq("Code", session_code).execute()
+        for name, info in upgrades.items():
+            bought = info.get("bought", 0)
+            multiplier = info.get("multiplier", 1.15)
+            # Calcul du prix dynamique pour chaque upgrade
+            prices[name] = round(base_price_param * (multiplier ** bought), 2)
 
         return jsonify({
             "status": "success",
-            "new_by_click": new_by_click,
-            "new_poires": new_poires,
-            "upgrades": upgrades
+            "upgrades_price": prices
         }), 200
+
     except Exception as e:
+        print(f"[UPGRADES PRICE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 @app.route("/upgrade_multiply", methods=["POST"])
