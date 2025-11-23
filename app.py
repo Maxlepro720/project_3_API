@@ -469,26 +469,23 @@ def get_personnel_boost():
 # --- ROUTES D'AMÉLIORATION (COÛT DYNAMIQUE) CORRIGÉES ---
 # ----------------------------------------------------------------------
 
-@app.route("/upgrades_price", methods=["GET"])
+from decimal import Decimal
+from flask import request, jsonify
+
+@app.route("/upgrades_price", methods=["POST"])
 def upgrades_price():
     """
     Retourne le prix actuel de tous les upgrades au format JSON :
     {"upgrade1": price1, "upgrade2": price2, ...}
     """
-    session_code = (request.args.get("session") or "").strip()
-    base_price_param = request.args.get("base_price")
+    data = request.json
+    session_code = request.args.get("session", "").strip()
+    base_prices = data.get("base_prices", {})
 
-    if not session_code or base_price_param is None:
+    if not session_code or not base_prices:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
 
     try:
-        # Correction : supprimer les underscores et convertir en float
-        base_price_param = str(base_price_param).replace("_", "")
-        try:
-            base_price_param = float(base_price_param)
-        except ValueError:
-            base_price_param = 100.0  # fallback si conversion impossible
-
         # Récupérer les upgrades de la session
         response = supabase.table("Sessions").select("upgrades").eq("Code", session_code).execute()
         if not response.data:
@@ -499,9 +496,20 @@ def upgrades_price():
 
         for name, info in upgrades.items():
             bought = info.get("bought", 0)
-            multiplier = info.get("multiplier", 1.15)
-            # Calcul du prix dynamique pour chaque upgrade
-            prices[name] = round(base_price_param * (multiplier ** bought), 2)
+            multiplier = Decimal(str(info.get("multiplier", 1.15)))
+
+            # Récupérer le prix de base envoyé depuis le client
+            base_price_str = base_prices.get(name, "100")  # fallback si absent
+            try:
+                base_price = Decimal(base_price_str)
+            except Exception:
+                base_price = Decimal("100")  # fallback si conversion impossible
+
+            # Calcul du prix dynamique
+            new_price = base_price * (multiplier ** bought)
+
+            # On renvoie en string pour JS, pour éviter perte de précision
+            prices[name] = str(new_price.quantize(Decimal("1.00")))
 
         return jsonify({
             "status": "success",
@@ -511,6 +519,7 @@ def upgrades_price():
     except Exception as e:
         print(f"[UPGRADES PRICE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 
