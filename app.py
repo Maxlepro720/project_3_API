@@ -570,43 +570,6 @@ def upgrade_multiply_session():
 # -----------------------------------
 # Route upgrades_price : prix de tous
 # -----------------------------------
-// ====================================================================
-// === FULL SYNC 3s (corrigé pour prix individuels) ===
-async function fullSync(){
-    if(!PLAYER_ID) return;
-
-    const sessionData = await fetchData(`/verify_session?id=${encodeURIComponent(PLAYER_ID)}`);
-    if(sessionData && sessionData.session_code){
-        SESSION_CODE = sessionData.session_code;
-        document.getElementById('sessionCodeDisplay').textContent = SESSION_CODE;
-        await updateUI();
-    }
-
-    if(SESSION_CODE){
-        // Préparer les prix de base pour toutes les upgrades
-        const basePrices = {};
-        [...COLLECTIVE_UPGRADES, ...PERSONAL_UPGRADES].forEach(u => {
-            basePrices[u.id] = u.price;
-        });
-
-        const upgradesPriceData = await fetchData(
-            `/upgrades_price?session=${encodeURIComponent(SESSION_CODE)}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ base_prices: basePrices })
-            }
-        );
-
-        if(upgradesPriceData && upgradesPriceData.upgrades_price){
-            for(const upgradeName in upgradesPriceData.upgrades_price){
-                const elem = document.getElementById(upgradeName + '_price');
-                if(elem) elem.textContent = formatNumber(upgradesPriceData.upgrades_price[upgradeName]);
-            }
-        }
-    }
-}
-
 @app.route("/personnel_boost", methods=["POST"])
 def personnel_boost():
     """Ajoute une valeur (float) au personnel_upgrade (float) du joueur après vérification du coût sur la session active."""
