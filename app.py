@@ -619,38 +619,53 @@ def verify_session():
     player_id = request.args.get("id", "").strip()
     if not player_id:
         return jsonify({"status": "error", "message": "ID manquant"}), 400
+
     try:
         final_session = None
-        creator_session_response = supabase.table("Sessions").select("*").eq("Creator", player_id).limit(1).execute()
-        if creator_session_response.data:
-            final_session = creator_session_response.data[0]
-        else:
-            player_session_response = supabase.table("Sessions").select("*").execute()
-            for session in player_session_response.data or []:
-                players = get_players_list(session)
-                if player_id in players:
-                    final_session = session
-                    break
 
-        if final_session:
-            final_players = get_players_list(final_session)
-            creator = final_session.get("Creator")
-            
+        # --- 1) Vérifier d'abord si le joueur est JOUEUR dans une session ---
+        all_sessions = supabase.table("Sessions").select("*").execute()
+
+        for session in all_sessions.data or []:
+            players = get_players_list(session)
+            if player_id in players:
+                final_session = session
+                break
+
+        # --- 2) Si aucune session trouvée en tant que joueur → vérifier s'il est CREATEUR ---
+        if not final_session:
+            creator_query = supabase.table("Sessions") \
+                .select("*") \
+                .eq("Creator", player_id) \
+                .limit(1) \
+                .execute()
+            if creator_query.data:
+                final_session = creator_query.data[0]
+
+        # --- 3) Si aucune session trouvée du tout ---
+        if not final_session:
+            print(f"[VERIFY] {player_id} non trouvé dans aucune session.")
+            return jsonify({"status": "error", "message": "Joueur non trouvé dans aucune session"}), 404
+
+        # --- 4) Construire la liste finale des joueurs ---
+        final_players = get_players_list(final_session)
+        creator = final_session.get("Creator")
+
+        # Ajouter le créateur dans la liste des joueurs
+        if creator not in final_players:
             final_players.append(creator)
-            final_players = list(set(final_players))
 
-            return jsonify({
-                "status": "success",
-                "session_code": final_session.get("Code"),
-                "creator": creator,
-                "players": final_players 
-            }), 200
+        return jsonify({
+            "status": "success",
+            "session_code": final_session.get("Code"),
+            "creator": creator,
+            "players": final_players
+        }), 200
 
-        print(f"[VERIFY] {player_id} non trouvé dans aucune session.")
-        return jsonify({"status": "error", "message": "Joueur non trouvé dans aucune session"}), 404
     except Exception as e:
         print(f"[VERIFY ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 @app.route("/verify_player_in_session", methods=["GET"])
