@@ -577,37 +577,42 @@ def upgrade_multiply_session():
 # -----------------------------------
 # Route upgrades_price : prix de tous
 # -----------------------------------
-@app.route("/upgrades_price", methods=["GET"])
-def upgrades_price():
-    """
-    Retourne le prix actuel de tous les upgrades au format JSON :
-    {"upgrade1": price1, "upgrade2": price2, ...}
-    """
-    session_code = (request.args.get("session") or "").strip()
-    base_price = request.args.get("base_price")
-    
-    if not session_code or base_price is None:
-        return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
-    
-    try:
-        base_price = float(base_price)
-        response = supabase.table("Sessions").select("upgrades").eq("Code", session_code).execute()
-        if not response.data:
-            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+// ====================================================================
+// === FULL SYNC 3s (corrigé pour prix individuels) ===
+async function fullSync(){
+    if(!PLAYER_ID) return;
 
-        upgrades = initialize_upgrades_json(response.data[0].get("upgrades"))
-        prices = {}
-        for name, info in upgrades.items():
-            bought = info.get("bought", 0)
-            multiplier = info.get("multiplier", 1.15)
-            prices[name] = round(base_price * (multiplier ** bought), 2)
+    const sessionData = await fetchData(`/verify_session?id=${encodeURIComponent(PLAYER_ID)}`);
+    if(sessionData && sessionData.session_code){
+        SESSION_CODE = sessionData.session_code;
+        document.getElementById('sessionCodeDisplay').textContent = SESSION_CODE;
+        await updateUI();
+    }
 
-        return jsonify({
-            "status": "success",
-            "upgrades_price": prices
-        }), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    if(SESSION_CODE){
+        // Préparer les prix de base pour toutes les upgrades
+        const basePrices = {};
+        [...COLLECTIVE_UPGRADES, ...PERSONAL_UPGRADES].forEach(u => {
+            basePrices[u.id] = u.price;
+        });
+
+        const upgradesPriceData = await fetchData(
+            `/upgrades_price?session=${encodeURIComponent(SESSION_CODE)}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ base_prices: basePrices })
+            }
+        );
+
+        if(upgradesPriceData && upgradesPriceData.upgrades_price){
+            for(const upgradeName in upgradesPriceData.upgrades_price){
+                const elem = document.getElementById(upgradeName + '_price');
+                if(elem) elem.textContent = formatNumber(upgradesPriceData.upgrades_price[upgradeName]);
+            }
+        }
+    }
+}
 
 @app.route("/personnel_boost", methods=["POST"])
 def personnel_boost():
