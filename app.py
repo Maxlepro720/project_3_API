@@ -43,7 +43,6 @@ def get_players_list(session_data):
     players_raw = session_data.get("Players")
     if isinstance(players_raw, str):
         try:
-            # S'assure de retourner une liste même si la chaîne est vide
             return json.loads(players_raw) if players_raw.strip() else []
         except json.JSONDecodeError:
             return []
@@ -118,7 +117,6 @@ def update_last_seen():
         if player_id:
             player_id = player_id.strip() 
             if player_id:
-                # Met à jour le statut à "online"
                 supabase.table("Player").update({
                     "Status": "🟢 online" 
                 }).eq("ID", player_id).execute()
@@ -130,12 +128,10 @@ def update_last_seen():
 # --- TÂCHE D'ARRIÈRE-PLAN POUR LA VÉRIFICATION D'INACTIVITÉ ---
 # ----------------------------------------------------------------------
 def check_player_activity():
-    """Vérifie périodiquement les joueurs inactifs (plus de 15 secondes) et les met 'offline'."""
+    """Vérifie périodiquement les joueurs inactifs."""
     print("[SCHEDULER] Le vérificateur d'activité est démarré.")
     while True:
         try:
-            # Cette fonction dépendrait d'une colonne 'last_seen' non détaillée ici.
-            # Nous laissons le thread actif pour la structure.
             pass 
         except Exception as e:
             print(f"[SCHEDULER_ERROR] Erreur lors de la vérification d'activité: {e}")
@@ -169,6 +165,7 @@ def signup():
         "ID": username, 
         "Password": hashed_pw, 
         "Status": "🔴 offline",
+        "personnel_upgrade": 1.0, # Float par défaut
     }).execute()
     print(f"[SIGNUP] {username} créé")
 
@@ -191,7 +188,7 @@ def login():
     if not check_password_hash(user_data["Password"], password):
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
-    # Assure l'existence de la session personnelle (Créateur PAS dans Players)
+    # Assure l'existence de la session personnelle
     existing_session = supabase.table("Sessions").select("Code").eq("Creator", username).execute()
     if not existing_session.data:
         session_code = generate_session_code()
@@ -200,12 +197,12 @@ def login():
             "Creator": username, 
             "Players": [],  
             "poires": 0, 
-            "By_Click": 1
+            "By_Click": 1.0 # Float par défaut
         }).execute()
         print(f"[LOGIN] Session personnelle {session_code} créée pour {username} (Creator).")
     else:
         session_code = existing_session.data[0]["Code"]
-        # Nettoyage: s'assurer qu'il n'est pas dans la liste Players (selon votre souhait)
+        # Nettoyage: s'assurer qu'il n'est pas dans la liste Players 
         session_data = supabase.table("Sessions").select("Players").eq("Code", session_code).limit(1).execute().data[0]
         players = get_players_list(session_data)
         if username in players:
@@ -230,7 +227,7 @@ def logout():
         # 1. Met le joueur offline
         supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
 
-        # 2. Retire le joueur de toutes les listes "Players" (y compris de sa session perso s'il s'y trouve par erreur)
+        # 2. Retire le joueur de toutes les listes "Players"
         response = supabase.table("Sessions").select("Code, Players").execute()
         for session in response.data or []:
             session_code = session.get("Code")
@@ -257,7 +254,6 @@ def create_session():
         return jsonify({"status": "error", "message": "ID utilisateur manquant"}), 400
 
     try:
-        # 1. Vérifie si le joueur est DÉJÀ créateur d'une session (session personnelle)
         existing_session_response = supabase.table("Sessions").select("Code").eq("Creator", player_id).limit(1).execute()
         
         if existing_session_response.data:
@@ -269,15 +265,14 @@ def create_session():
                 "session_name": session_code
             }), 200 
         
-        # 2. Création d'une nouvelle session personnelle
         session_code = generate_session_code(length=5) 
         
         new_session_data = {
             "Code": session_code,
             "Creator": player_id,
-            "Players": [], # Le créateur n'est pas dans la liste 'Players'
+            "Players": [], 
             "poires": 0,
-            "By_Click": 1, 
+            "By_Click": 1.0, # Float par défaut
         }
 
         supabase.table("Sessions").insert(new_session_data).execute()
@@ -299,7 +294,6 @@ def join_session():
         return jsonify({"status": "error", "message": "Code ou ID manquant"}), 400
         
     try:
-        # 1. Vérifie si la session cible existe
         response = supabase.table("Sessions").select("*").eq("Code", code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
@@ -308,7 +302,6 @@ def join_session():
         players = get_players_list(session)
         creator = session.get("Creator")
         
-        # 2. Vérifie les limites et le statut
         if player_id == creator:
             return jsonify({"status": "error", "message": "Vous êtes le créateur de cette session."}), 400
         if player_id in players:
@@ -316,10 +309,8 @@ def join_session():
         if len(players) >= MAX_PLAYERS_PER_SESSION:
             return jsonify({"status": "error", "message": f"La session est pleine (max {MAX_PLAYERS_PER_SESSION} joueurs)"}), 400
             
-        # 3. Quitter toute autre session avant de rejoindre (nettoyage)
         all_sessions = supabase.table("Sessions").select("Code, Players, Creator").execute().data or []
         for s in all_sessions:
-            # Ne pas toucher à la session personnelle (où il est créateur) ou à la session cible
             if s.get("Creator") == player_id or s.get("Code") == code: 
                 continue 
             
@@ -329,7 +320,6 @@ def join_session():
                 supabase.table("Sessions").update({"Players": current_players}).eq("Code", s.get("Code")).execute()
                 print(f"[JOIN CLEANUP] {player_id} retiré de l'ancienne session {s.get('Code')}.")
         
-        # 4. Ajout du joueur à la nouvelle session
         players.append(player_id)
         supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
         print(f"[JOIN] {player_id} a rejoint {code}.")
@@ -358,7 +348,6 @@ def leave_session():
         creator = session.get("Creator")
 
         if player_id == creator:
-            # Le Créateur ne peut pas "quitter" sa session (code 403)
             return jsonify({"status": "error", "message": "Le créateur ne peut pas quitter sa propre session, il doit la fermer ou se déconnecter."}), 403
             
         if player_id not in players:
@@ -369,12 +358,10 @@ def leave_session():
         supabase.table("Sessions").update({"Players": players}).eq("Code", code).execute()
         print(f"[LEAVE] {player_id} a quitté {code}.")
         
-        # 2. Récupérer le code de sa session personnelle (celle dont il est Creator)
+        # 2. Récupérer le code de sa session personnelle 
         personal_session_response = supabase.table("Sessions").select("Code").eq("Creator", player_id).limit(1).execute()
         new_personal_code = personal_session_response.data[0]["Code"] if personal_session_response.data else None
         
-        # Aucune réintégration dans la liste 'Players' de la session personnelle, car il est le Créateur.
-
         return jsonify({
             "status": "success", 
             "message": f"{player_id} a quitté la session", 
@@ -395,23 +382,114 @@ def change_session_route():
     result, status_code = rename_session_logic(player_id, old_code, new_code)
     return jsonify(result), status_code
 
+## --- NOUVELLES ROUTES D'AMÉLIORATION ---
+
+@app.route("/upgrade_add", methods=["POST"])
+def upgrade_add_session():
+    """Ajoute une valeur (float) au By_Click (float) de la session."""
+    data = request.get_json(force=True)
+    session_code = (data.get("session") or "").strip()
+    upgrade_value = data.get("upgrade")
+    
+    if not session_code or upgrade_value is None:
+        return jsonify({"status": "error", "message": "Paramètres session ou upgrade manquants"}), 400
+    
+    try:
+        upgrade_value = float(upgrade_value)
+        
+        response = supabase.table("Sessions").select("By_Click").eq("Code", session_code).execute()
+        if not response.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+
+        current_by_click = response.data[0].get("By_Click", 1.0)
+        new_by_click = float(current_by_click) + upgrade_value
+        
+        supabase.table("Sessions").update({"By_Click": new_by_click}).eq("Code", session_code).execute()
+
+        print(f"[UPGRADE_ADD] Session {session_code}: By_Click passe de {current_by_click} à {new_by_click}.")
+        return jsonify({"status": "success", "new_by_click": new_by_click}), 200
+    except ValueError:
+        return jsonify({"status": "error", "message": "La valeur 'upgrade' doit être un nombre flottant."}), 400
+    except Exception as e:
+        print(f"[UPGRADE_ADD ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/upgrade_multiply", methods=["POST"])
+def upgrade_multiply_session():
+    """Multiplie le By_Click (float) de la session par une valeur (float)."""
+    data = request.get_json(force=True)
+    session_code = (data.get("session") or "").strip()
+    upgrade_multiplier = data.get("upgrade")
+    
+    if not session_code or upgrade_multiplier is None:
+        return jsonify({"status": "error", "message": "Paramètres session ou upgrade manquants"}), 400
+    
+    try:
+        upgrade_multiplier = float(upgrade_multiplier)
+        if upgrade_multiplier <= 0:
+            return jsonify({"status": "error", "message": "Le multiplicateur doit être supérieur à zéro."}), 400
+        
+        response = supabase.table("Sessions").select("By_Click").eq("Code", session_code).execute()
+        if not response.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+
+        current_by_click = response.data[0].get("By_Click", 1.0)
+        new_by_click = float(current_by_click) * upgrade_multiplier
+        
+        supabase.table("Sessions").update({"By_Click": new_by_click}).eq("Code", session_code).execute()
+
+        print(f"[UPGRADE_MUL] Session {session_code}: By_Click passe de {current_by_click} à {new_by_click}.")
+        return jsonify({"status": "success", "new_by_click": new_by_click}), 200
+    except ValueError:
+        return jsonify({"status": "error", "message": "Le multiplicateur 'upgrade' doit être un nombre flottant."}), 400
+    except Exception as e:
+        print(f"[UPGRADE_MUL ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+        
+@app.route("/personnel_boost", methods=["POST"])
+def personnel_boost():
+    """Ajoute une valeur (float) au personnel_upgrade (float) du joueur."""
+    data = request.get_json(force=True)
+    player_id = (data.get("id") or "").strip()
+    boost_value = data.get("boost")
+    
+    if not player_id or boost_value is None:
+        return jsonify({"status": "error", "message": "Paramètres ID ou boost manquants"}), 400
+    
+    try:
+        boost_value = float(boost_value)
+        
+        response = supabase.table("Player").select("personnel_upgrade").eq("ID", player_id).execute()
+        if not response.data:
+            return jsonify({"status": "error", "message": "Joueur introuvable"}), 404
+            
+        current_boost = response.data[0].get("personnel_upgrade", 1.0)
+        new_boost = float(current_boost) + boost_value
+        
+        supabase.table("Player").update({"personnel_upgrade": new_boost}).eq("ID", player_id).execute()
+
+        print(f"[PERSONAL_BOOST] {player_id}: boost passe de {current_boost} à {new_boost}.")
+        return jsonify({"status": "success", "new_personal_boost": new_boost}), 200
+    except ValueError:
+        return jsonify({"status": "error", "message": "La valeur 'boost' doit être un nombre flottant."}), 400
+    except Exception as e:
+        print(f"[PERSONAL_BOOST ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 ## --- INFORMATIONS & DONNÉES ---
 
 @app.route("/verify_session", methods=["GET"])
 def verify_session():
-    """Trouve la session active du joueur (Priorité Créateur > Joueur)."""
+    # ... (inchangé)
     player_id = request.args.get("id", "").strip()
     if not player_id:
         return jsonify({"status": "error", "message": "ID manquant"}), 400
     try:
         final_session = None
-
-        # 1. Tente de trouver la session où l'utilisateur est Créateur (Priorité)
         creator_session_response = supabase.table("Sessions").select("*").eq("Creator", player_id).limit(1).execute()
         if creator_session_response.data:
             final_session = creator_session_response.data[0]
         else:
-            # 2. Tente de trouver la session où l'utilisateur est Joueur (dans la liste Players)
             player_session_response = supabase.table("Sessions").select("*").execute()
             for session in player_session_response.data or []:
                 players = get_players_list(session)
@@ -423,7 +501,6 @@ def verify_session():
             final_players = get_players_list(final_session)
             creator = final_session.get("Creator")
             
-            # 🔥 CONSERVÉ INTACT : Ajoute le créateur à la liste retournée au client
             final_players.append(creator)
             final_players = list(set(final_players))
 
@@ -443,7 +520,7 @@ def verify_session():
 
 @app.route("/verify_player_in_session", methods=["GET"])
 def verify_player_in_session():
-    """Vérifie le statut d'une session spécifique et confirme la participation du joueur."""
+    # ... (inchangé)
     username = request.args.get("username", "").strip()
     session_code = request.args.get("session_code", "").strip()
     if not username or not session_code:
@@ -458,7 +535,6 @@ def verify_player_in_session():
         creator = session.get("Creator")
         players_in_db = get_players_list(session)
         
-        # Retourne tous les participants uniques (créateur + joueurs)
         unique_active_players = set(players_in_db)
         unique_active_players.add(creator)
         
@@ -469,7 +545,7 @@ def verify_player_in_session():
             "status": "success",
             "session_code": session_code,
             "creator": creator,
-            "players": list(unique_active_players) # Retourne tous les joueurs uniques (Créateur inclus)
+            "players": list(unique_active_players) 
         }), 200
     except Exception as e:
         print(f"[VERIFY PLAYER ERROR] {e}")
@@ -477,44 +553,70 @@ def verify_player_in_session():
 
 @app.route("/poire", methods=["POST"])
 def poire():
+    """
+    Calcule et met à jour le score (entier) en utilisant les boosts (float).
+    poires2add = round(click * Session.By_Click * Player.personnel_upgrade)
+    """
     data = request.get_json(force=True)
     session_code = (data.get("session") or "").strip()
     click = (data.get("click") or 0)
     player_id = (data.get("id") or "").strip() 
     
     if not session_code or not player_id:
-        return jsonify({"status": "error", "message": "Session ou ID joueur manquant"}), 400
+        return jsonify({"status": "error", "message": "Session, Click ou ID joueur manquant"}), 400
         
     try:
-        response = supabase.table("Sessions").select("poires, By_Click").eq("Code", session_code).execute()
-        if not response.data:
+        # Le nombre de clics est l'input de base et peut être un entier.
+        click = int(click)
+        
+        # 1. Récupérer By_Click (float) de la session
+        session_response = supabase.table("Sessions").select("poires, By_Click").eq("Code", session_code).execute()
+        if not session_response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
-        session = response.data[0]
-        by_click = session.get("By_Click", 1)
-        poires2add = by_click * int(click)
-        current_poires = session.get("poires", 0)
+        session_data = session_response.data[0]
+        current_poires = session_data.get("poires", 0)
+        # Assure que la valeur de la DB est traitée comme float
+        session_by_click = float(session_data.get("By_Click", 1.0))
+        
+        # 2. Récupérer personnel_upgrade (float) du joueur
+        player_response = supabase.table("Player").select("personnel_upgrade").eq("ID", player_id).execute()
+        if not player_response.data:
+             player_boost = 1.0
+        else:
+             # Assure que la valeur de la DB est traitée comme float
+             player_boost = float(player_response.data[0].get("personnel_upgrade", 1.0))
 
+        # 3. Calculer les poires à ajouter (float intermédiaire)
+        raw_poires_to_add = click * session_by_click * player_boost
+        
+        # 4. ARRONDISSEMENT du score à l'entier le plus proche
+        poires2add = int(round(raw_poires_to_add))
+        
         new_total = current_poires + poires2add
         
+        # 5. Mise à jour de la nouvelle valeur (qui est un INT)
         supabase.table("Sessions").update({"poires": new_total}).eq("Code", session_code).execute()
 
-        print(f"[POIRE] {player_id} a ajouté {poires2add} poires à la session {session_code}. Total: {new_total}")
+        print(f"[POIRE] {player_id} a ajouté {poires2add} poires à la session {session_code}. Total: {new_total}. (Base: {click}, Session Boost: {session_by_click:.2f}, Perso Boost: {player_boost:.2f}, Raw: {raw_poires_to_add:.2f})")
         return jsonify({"status": "success", "added": poires2add, "poires": new_total}), 200
+    except ValueError:
+        return jsonify({"status": "error", "message": "La valeur 'click' doit être un nombre entier."}), 400
     except Exception as e:
         print(f"[POIRE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/get_poires", methods=["GET"])
 def get_poires():
-    session_code = request.args.get("session", "").strip()
-    if not session_code:
+    data = request.args.get("session", "").strip()
+    if not data:
         return jsonify({"status": "error", "message": "Code de session manquant"}), 400
     try:
-        session_data = supabase.table("Sessions").select("poires").eq("Code", session_code).execute()
+        session_data = supabase.table("Sessions").select("poires").eq("Code", data).execute()
         if not session_data.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
-        poires = session_data.data[0].get("poires", 0)
+        # Le score "poires" est stocké en INT
+        poires = session_data.data[0].get("poires", 0) 
         return jsonify({"status": "success", "poires": poires}), 200
     except Exception as e:
         print(f"[GET POIRES ERROR] {e}")
@@ -525,7 +627,6 @@ def get_poires():
 # --- DÉMARRAGE DU SERVEUR ---
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
-    # DÉMARRAGE DU THREAD D'ARRIÈRE-PLAN pour vérifier l'inactivité
     activity_thread = threading.Thread(target=check_player_activity, daemon=True)
     activity_thread.start()
     
