@@ -386,6 +386,53 @@ def change_session_route():
 
 ## --- NOUVELLES ROUTES D'AMÉLIORATION (COÛT DYNAMIQUE) ---
 
+@app.route("/get_session_multiplier", methods=["GET"])
+def get_session_multiplier():
+    """Récupère le multiplicateur By_Click (float) d'une session."""
+    session_code = request.args.get("session", "").strip()
+    
+    if not session_code:
+        return jsonify({"status": "error", "message": "Code de session manquant"}), 400
+        
+    try:
+        response = supabase.table("Sessions").select("By_Click").eq("Code", session_code).execute()
+        
+        if not response.data:
+            return jsonify({"status": "error", "message": "Session introuvable"}), 404
+            
+        # S'assure de renvoyer une valeur float
+        multiplier = float(response.data[0].get("By_Click", 1.0))
+        
+        return jsonify({"status": "success", "session_code": session_code, "by_click_multiplier": multiplier}), 200
+        
+    except Exception as e:
+        print(f"[GET SESSION MULTI ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/get_personnel_boost", methods=["GET"])
+def get_personnel_boost():
+    """Récupère le boost personnel (float) d'un joueur."""
+    player_id = request.args.get("id", "").strip()
+    
+    if not player_id:
+        return jsonify({"status": "error", "message": "ID joueur manquant"}), 400
+        
+    try:
+        response = supabase.table("Player").select("personnel_upgrade").eq("ID", player_id).execute()
+        
+        if not response.data:
+            return jsonify({"status": "error", "message": "Joueur introuvable"}), 404
+            
+        # S'assure de renvoyer une valeur float
+        boost = float(response.data[0].get("personnel_upgrade", 1.0))
+        
+        return jsonify({"status": "success", "player_id": player_id, "personnel_boost": boost}), 200
+        
+    except Exception as e:
+        print(f"[GET PERSONAL BOOST ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/upgrade_add", methods=["POST"])
 def upgrade_add_session():
     """Ajoute une valeur (float) au By_Click (float) de la session après vérification du coût."""
