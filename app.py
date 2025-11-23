@@ -38,6 +38,38 @@ def generate_session_code(length=5):
         length = MAX_SESSION_CODE_LENGTH
     chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return "".join(random.choice(chars) for _ in range(length))
+# ----------------------------------------------------------------------
+# --- UTILITIES SUPPLÉMENTAIRES ---
+# ----------------------------------------------------------------------
+
+def initialize_upgrades_json(upgrades_raw):
+    """
+    Transforme les données d'upgrades en dictionnaire utilisable.
+    Si la donnée est None ou invalide, retourne un dictionnaire vide.
+    Chaque upgrade doit avoir au moins "bought" et "multiplier".
+    """
+    if not upgrades_raw:
+        return {}
+    
+    if isinstance(upgrades_raw, str):
+        try:
+            upgrades = json.loads(upgrades_raw)
+        except json.JSONDecodeError:
+            upgrades = {}
+    elif isinstance(upgrades_raw, dict):
+        upgrades = upgrades_raw
+    else:
+        upgrades = {}
+
+    # Assurer la structure minimale pour chaque upgrade
+    for key, val in upgrades.items():
+        if not isinstance(val, dict):
+            upgrades[key] = {"bought": 0, "multiplier": 1.15}
+        else:
+            upgrades[key].setdefault("bought", 0)
+            upgrades[key].setdefault("multiplier", 1.15)
+
+    return upgrades
 
 def get_players_list(session_data):
     """Gère la désérialisation de la liste de joueurs de Supabase."""
