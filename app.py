@@ -15,7 +15,7 @@ MAX_PLAYERS_PER_SESSION = 5
 # ---------------------------------
 
 app = Flask(__name__)
-CORS(app, origins=[https://clickerbutmultiplayer.xo.je])
+CORS(app, origins=["https://clickerbutmultiplayer.xo.je"])
 
 # NOTE : Assurez-vous que ces variables d'environnement sont bien définies
 # Les variables d'environnement sont nécessaires pour que Supabase fonctionne.
