@@ -509,14 +509,11 @@ def get_personnel_boost():
 from decimal import Decimal
 from flask import request, jsonify
 
-@app.route("/upgrades_price", methods=["GET"])
+@app.route("/upgrades_price", methods=["POST"])
 def upgrades_price():
-    session_code = request.args.get("session", "").strip()
-    base_prices_json = request.args.get("base_prices", "{}")
-    try:
-        base_prices = json.loads(base_prices_json)
-    except Exception:
-        base_prices = {}
+    data = request.get_json(force=True)
+    session_code = data.get("session", "").strip()
+    base_prices = data.get("base_prices", {})
 
     if not session_code or not base_prices:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
@@ -538,6 +535,7 @@ def upgrades_price():
         return jsonify({"status": "success", "upgrades_price": prices}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 @app.route("/upgrade_multiply", methods=["POST"])
