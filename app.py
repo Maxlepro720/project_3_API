@@ -510,15 +510,12 @@ from decimal import Decimal
 from flask import request, jsonify
 
 # ------------------- ROUTE UPGRADES PRICE -------------------
-@app.route("/upgrades_price", methods=["GET"])
+# ------------------- ROUTE UPGRADES PRICE -------------------
+@app.route("/upgrades_price", methods=["POST"])
 def upgrades_price():
-    session_code = request.args.get("session", "").strip()
-    base_prices_json = request.args.get("base_prices", "{}")
-    
-    try:
-        base_prices = json.loads(base_prices_json)
-    except Exception:
-        base_prices = {}
+    data = request.get_json(force=True)
+    session_code = (data.get("session") or "").strip()
+    base_prices = data.get("base_prices") or {}
 
     if not session_code or not base_prices:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
