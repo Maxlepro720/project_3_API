@@ -511,18 +511,18 @@ from flask import request, jsonify
 
 # ------------------- ROUTE UPGRADES PRICE -------------------
 # ------------------- ROUTE UPGRADES PRICE -------------------
+# ------------------- ROUTE UPGRADE PRICE / BY_CLICK -------------------
 @app.route("/upgrades_price", methods=["POST"])
 def upgrades_price():
     data = request.get_json(force=True)
     session_code = (data.get("session") or "").strip()
     base_prices = data.get("base_prices") or {}
-    client_upgrades = data.get("upgrades") or {}  # boosts envoyés par le client
 
     if not session_code or not base_prices:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
 
     try:
-        # Récupérer les upgrades stockés pour la session
+        # Récupérer les upgrades stockées pour la session
         response = supabase.table("Sessions").select("upgrades").eq("Code", session_code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
@@ -530,31 +530,32 @@ def upgrades_price():
         upgrades = initialize_upgrades_json(response.data[0].get("upgrades"))
         prices = {}
 
-        # Type des upgrades
-        UPGRADE_TYPE = {
-            "upgrade1": "add", "upgrade2": "add", "upgrade3": "add", "upgrade4": "multiply",
-            "upgrade5": "multiply", "upgrade6": "add", "upgrade7": "multiply", "upgrade8": "add",
-        }
-
+        # Type des upgrades stocké dans chaque upgrade
+        # Exemple d’upgrade : {"bought":2, "type":"add", "boost":0.1, "multiplier":1.15}
         MAX_BOUGHT = 10000
 
-        # Calcul des prix
+        # Calcul des prix selon le multiplier stocké
         for name, info in upgrades.items():
             bought = min(info.get("bought", 0), MAX_BOUGHT)
-            multiplier = float(info.get("multiplier", 1.15))
+            multiplier = float(info.get("multiplier", 1.15))  # pour prix
             base_price = float(base_prices.get(name, 100))
             prices[name] = round(base_price * (multiplier ** bought), 2)
 
-        # Calcul By_Click avec les boosts envoyés par le client
+        # Calcul By_Click avec les boosts stockés dans l’upgrade
         by_click = 0.0
-        # d'abord les add
-        for name, boost_value in client_upgrades.items():
-            if UPGRADE_TYPE.get(name) == "add":
-                by_click += float(boost_value)
-        # puis les multiply
-        for name, boost_value in client_upgrades.items():
-            if UPGRADE_TYPE.get(name) == "multiply":
-                by_click *= float(boost_value) if by_click > 0 else float(boost_value)
+        # d’abord les "add"
+        for name, info in upgrades.items():
+            if info.get("type") == "add":
+                boost = float(info.get("boost", 0))
+                bought = min(info.get("bought", 0), MAX_BOUGHT)
+                by_click += bought * boost
+
+        # puis les "multiply"
+        for name, info in upgrades.items():
+            if info.get("type") == "multiply":
+                boost = float(info.get("boost", 1))
+                bought = min(info.get("bought", 0), MAX_BOUGHT)
+                by_click *= boost ** bought if by_click > 0 else boost ** bought
 
         # Mise à jour By_Click dans la session
         supabase.table("Sessions").update({"By_Click": by_click}).eq("Code", session_code).execute()
@@ -563,6 +564,7 @@ def upgrades_price():
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 
