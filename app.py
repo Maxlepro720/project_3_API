@@ -516,6 +516,7 @@ def upgrades_price():
     data = request.get_json(force=True)
     session_code = (data.get("session") or "").strip()
     base_prices = data.get("base_prices") or {}
+    client_upgrades = data.get("upgrades") or {}  # boost envoyé par le client
 
     if not session_code or not base_prices:
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
@@ -528,7 +529,6 @@ def upgrades_price():
         upgrades = initialize_upgrades_json(response.data[0].get("upgrades"))
         prices = {}
 
-        # Dictionnaire pour savoir si l'upgrade est add ou multiply
         UPGRADE_TYPE = {
             "upgrade1": "add",
             "upgrade2": "add",
@@ -545,30 +545,33 @@ def upgrades_price():
         # Calcul des prix
         for name, info in upgrades.items():
             bought = min(info.get("bought", 0), MAX_BOUGHT)
-            multiplier = float(info.get("multiplier", 1.15))
+            multiplier = float(info.get("multiplier", 1.15))  # multiplier pour le prix
             base_price = float(base_prices.get(name, 100))
             prices[name] = round(base_price * (multiplier ** bought), 2)
 
-        # Calcul By_Click : d'abord add, puis multiply
+        # Calcul By_Click avec boost client uniquement
         by_click = 0.0
+
+        # Add
         for name, info in upgrades.items():
             if UPGRADE_TYPE.get(name) == "add":
-                bought = min(info.get("bought", 0), MAX_BOUGHT)
-                multiplier = float(info.get("multiplier", 1.15))
-                by_click += bought * multiplier
+                client_boost = float(client_upgrades.get(name, 0))
+                by_click += client_boost
+
+        # Multiply
         for name, info in upgrades.items():
             if UPGRADE_TYPE.get(name) == "multiply":
-                bought = min(info.get("bought", 0), MAX_BOUGHT)
-                multiplier = float(info.get("multiplier", 1.15))
-                by_click *= multiplier ** bought if by_click > 0 else multiplier ** bought
+                client_boost = float(client_upgrades.get(name, 0))
+                by_click *= (1 + client_boost) if by_click > 0 else (1 + client_boost)
 
-        # Mise à jour By_Click dans la session
+        # Mise à jour By_Click
         supabase.table("Sessions").update({"By_Click": by_click}).eq("Code", session_code).execute()
 
         return jsonify({"status": "success", "upgrades_price": prices, "by_click": by_click}), 200
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 # ------------------- ROUTE UPGRADE MULTIPLY -------------------
