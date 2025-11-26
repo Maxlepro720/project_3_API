@@ -522,7 +522,7 @@ def upgrades_price():
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
 
     try:
-        # Récupérer les upgrades stockées pour la session
+        # 1. Récupérer les upgrades stockés pour la session
         response = supabase.table("Sessions").select("upgrades").eq("Code", session_code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
@@ -530,27 +530,26 @@ def upgrades_price():
         upgrades = initialize_upgrades_json(response.data[0].get("upgrades"))
         prices = {}
 
-        # Type des upgrades stocké dans chaque upgrade
-        # Exemple d’upgrade : {"bought":2, "type":"add", "boost":0.1, "multiplier":1.15}
         MAX_BOUGHT = 10000
 
-        # Calcul des prix selon le multiplier stocké
+        # Calcul des prix des upgrades (multiplier augmente le prix)
         for name, info in upgrades.items():
             bought = min(info.get("bought", 0), MAX_BOUGHT)
-            multiplier = float(info.get("multiplier", 1.15))  # pour prix
+            multiplier = float(info.get("multiplier", 1.15))
             base_price = float(base_prices.get(name, 100))
             prices[name] = round(base_price * (multiplier ** bought), 2)
 
-        # Calcul By_Click avec les boosts stockés dans l’upgrade
+        # Calcul By_Click : d'abord les add, puis les multiply, en utilisant le boost stocké dans le JSON
         by_click = 0.0
-        # d’abord les "add"
+
+        # add
         for name, info in upgrades.items():
             if info.get("type") == "add":
                 boost = float(info.get("boost", 0))
                 bought = min(info.get("bought", 0), MAX_BOUGHT)
-                by_click += bought * boost
+                by_click += boost * bought
 
-        # puis les "multiply"
+        # multiply
         for name, info in upgrades.items():
             if info.get("type") == "multiply":
                 boost = float(info.get("boost", 1))
@@ -564,8 +563,6 @@ def upgrades_price():
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
-
 
 
 
