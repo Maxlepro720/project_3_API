@@ -527,41 +527,36 @@ def upgrades_price():
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
-        upgrades = initialize_upgrades_json(response.data[0].get("upgrades"))
+        upgrades = response.data[0].get("upgrades") or {}
         prices = {}
 
         MAX_BOUGHT = 10000
+        by_click = 0.0
 
-        # Calcul des prix des upgrades (multiplier augmente le prix)
+        # 2. Calculer les prix et le By_Click
         for name, info in upgrades.items():
-            bought = min(info.get("bought", 0), MAX_BOUGHT)
+            bought = min(int(info.get("bought", 0)), MAX_BOUGHT)
             multiplier = float(info.get("multiplier", 1.15))
+            boost = float(info.get("boost", 0))
+            upgrade_type = info.get("type", "add")
+
+            # Prix de l'upgrade
             base_price = float(base_prices.get(name, 100))
             prices[name] = round(base_price * (multiplier ** bought), 2)
 
-        # Calcul By_Click : d'abord les add, puis les multiply, en utilisant le boost stocké dans le JSON
-        by_click = 0.0
-
-        # add
-        for name, info in upgrades.items():
-            if info.get("type") == "add":
-                boost = float(info.get("boost", 0))
-                bought = min(info.get("bought", 0), MAX_BOUGHT)
+            # By_Click
+            if upgrade_type == "add":
                 by_click += boost * bought
-
-        # multiply
-        for name, info in upgrades.items():
-            if info.get("type") == "multiply":
-                boost = float(info.get("boost", 1))
-                bought = min(info.get("bought", 0), MAX_BOUGHT)
+            elif upgrade_type == "multiply":
                 by_click *= boost ** bought if by_click > 0 else boost ** bought
 
-        # Mise à jour By_Click dans la session
+        # 3. Mise à jour du By_Click dans la session
         supabase.table("Sessions").update({"By_Click": by_click}).eq("Code", session_code).execute()
 
         return jsonify({"status": "success", "upgrades_price": prices, "by_click": by_click}), 200
 
     except Exception as e:
+        print(f"[ERROR upgrades_price] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
