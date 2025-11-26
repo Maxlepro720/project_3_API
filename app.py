@@ -539,7 +539,7 @@ def upgrades_price():
             prices[name] = round(base_price * (multiplier ** bought), 2)
 
         # Calcul By_Click : add puis multiply
-        by_click = 0.0
+        by_click = 1.0
         for name, info in upgrades.items():
             if info.get("type") == "add":
                 by_click += info.get("boost", 0) * info.get("bought", 0)
