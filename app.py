@@ -830,10 +830,14 @@ def poire():
         # 4. ARRONDISSEMENT du score à l'entier le plus proche
         poires2add = int(round(raw_poires_to_add))
         
-        new_total = current_poires + poires2add
-        
-        # 5. Mise à jour de la nouvelle valeur (qui est un INT)
-        supabase.table("Sessions").update({"poires": new_total}).eq("Code", session_code).execute()
+        # 5. Mise à jour de la nouvelle valeur via fonction stockée, fallback si échec
+        try:
+            supabase.rpc("add_poires", {"val": poires2add, "session_code": session_code}).execute()
+            new_total = current_poires + poires2add
+        except Exception as e:
+            # fallback update classique
+            new_total = current_poires + poires2add
+            supabase.table("Sessions").update({"poires": new_total}).eq("Code", session_code).execute()
 
         print(f"[POIRE] {player_id} a ajouté {poires2add} poires à la session {session_code}. Total: {new_total}.")
         return jsonify({"status": "success", "added": poires2add, "poires": new_total}), 200
