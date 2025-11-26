@@ -531,11 +531,11 @@ def upgrades_price():
         # Dictionnaire pour savoir si l'upgrade est add ou multiply
         UPGRADE_TYPE = {
             "upgrade1": "add",
-            "upgrade2": "multiply",
+            "upgrade2": "add",
             "upgrade3": "add",
             "upgrade4": "multiply",
-            "upgrade5": "add",
-            "upgrade6": "multiply",
+            "upgrade5": "multiply",
+            "upgrade6": "add",
             "upgrade7": "multiply",
             "upgrade8": "add",
         }
