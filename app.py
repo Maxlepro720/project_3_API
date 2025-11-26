@@ -522,35 +522,37 @@ def upgrades_price():
         return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
 
     try:
-        # 1. Récupérer les upgrades stockés pour la session
+        # Récupérer upgrades stockés pour la session
         response = supabase.table("Sessions").select("upgrades").eq("Code", session_code).execute()
         if not response.data:
             return jsonify({"status": "error", "message": "Session introuvable"}), 404
 
         upgrades = response.data[0].get("upgrades") or {}
         prices = {}
-
         MAX_BOUGHT = 10000
-        by_click = 0.0
 
-        # 2. Calculer les prix et le By_Click
+        # Calcul des prix
         for name, info in upgrades.items():
-            bought = min(int(info.get("bought", 0)), MAX_BOUGHT)
+            bought = min(info.get("bought", 0), MAX_BOUGHT)
             multiplier = float(info.get("multiplier", 1.15))
-            boost = float(info.get("boost", 0))
-            upgrade_type = info.get("type", "add")
-
-            # Prix de l'upgrade
             base_price = float(base_prices.get(name, 100))
             prices[name] = round(base_price * (multiplier ** bought), 2)
 
-            # By_Click
-            if upgrade_type == "add":
-                by_click += boost * bought
-            elif upgrade_type == "multiply":
-                by_click *= boost ** bought if by_click > 0 else boost ** bought
+        # Calcul By_Click : add puis multiply
+        by_click = 0.0
+        for name, info in upgrades.items():
+            if info.get("type") == "add":
+                by_click += info.get("boost", 0) * info.get("bought", 0)
+        for name, info in upgrades.items():
+            if info.get("type") == "multiply":
+                boost = info.get("boost", 1)
+                bought = info.get("bought", 0)
+                by_click = by_click * (boost ** bought) if by_click > 0 else boost ** bought
 
-        # 3. Mise à jour du By_Click dans la session
+        # S'assurer que by_click >= 1
+        by_click = max(by_click, 1.0)
+
+        # Mise à jour en base
         supabase.table("Sessions").update({"By_Click": by_click}).eq("Code", session_code).execute()
 
         return jsonify({"status": "success", "upgrades_price": prices, "by_click": by_click}), 200
@@ -558,6 +560,7 @@ def upgrades_price():
     except Exception as e:
         print(f"[ERROR upgrades_price] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 
