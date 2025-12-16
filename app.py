@@ -46,6 +46,9 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 # Initialisation du client Supabase
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Nom de votre table de sauvegarde Skull Arena
+TABLE_NAME_Skull_Arena = "Skull_Arena_DataBase"
+
 # ----------------------------------------------------------------------
 # --- UTILITIES ---
 # ----------------------------------------------------------------------
@@ -853,6 +856,106 @@ def get_poires():
         return jsonify({"status": "success", "poires": poires}), 200
     except Exception as e:
         print(f"[GET POIRES ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+#------------------------------------------------
+#SKULL     ARENA 
+#------------------------------------------------
+
+@app.route('/skull_arena_update_data', methods=['POST'])
+def skull_arena_update_data():
+    """
+    [Skull_Arena_ServerSave] Met à jour les données du joueur (crânes, meilleure vague, niveaux d'amélioration).
+    """
+    data = request.get_json(force=True)
+    username = (data.get('username') or "").strip()
+    
+    if not username:
+        return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+    try:
+        new_best_vague = int(data.get('best_wave', 0))
+        
+        # 1. Fetcher la meilleure vague actuelle pour ne pas l'écraser
+        current_data_query = supabase.table(TABLE_NAME_Skull_Arena).select('"Best_Vague"').eq('username', username).limit(1).execute()
+        current_data = current_data_query.data[0] if current_data_query.data else None
+        
+        current_best_vague = current_data.get('Best_Vague', 0) if current_data else 0
+        final_best_vague = max(current_best_vague, new_best_vague)
+        
+        # 2. Préparer le payload avec les niveaux et les crânes
+        payload = {
+            "username": username,
+            "Best_Vague": final_best_vague, 
+            "Crane": int(data.get('skulls', 0)),
+            "UP_Degat": int(data.get('up_damage', 0)),
+            "UP_Portée": int(data.get('up_range', 0)),
+            "UP_Vitesse": int(data.get('up_speed', 0)),
+            "UP_Cadence": int(data.get('up_fire', 0))
+        }
+        
+        # 3. Effectuer l'UPSERT
+        response = supabase.table(TABLE_NAME_Skull_Arena).upsert(payload, on_conflict="username").execute()
+        
+        if response.data:
+             return jsonify({"status": "success", "message": "Sauvegarde Skull Arena réussie"}), 200
+        else:
+             return jsonify({"status": "error", "message": "Échec de l'UPSERT Skull Arena"}), 500
+
+    except Exception as e:
+        print(f"[SAVE SKULL ARENA ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ------------------- ROUTE DE CHARGEMENT -------------------
+@app.route('/skull_arena_get_data', methods=['POST'])
+def skull_arena_get_data():
+    """
+    [Skull_Arena_ServerLoad] Récupère les données d'un joueur, ou retourne les valeurs par défaut.
+    """
+    data = request.get_json(force=True)
+    username = (data.get('username') or "").strip()
+
+    if not username:
+        return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+    try:
+        columns = '"Crane", "Best_Vague", "UP_Degat", "UP_Portée", "UP_Vitesse", "UP_Cadence"'
+        response = supabase.table(TABLE_NAME_Skull_Arena).select(columns).eq('username', username).limit(1).execute()
+        
+        if not response.data:
+            # Réponse d'initialisation pour un nouveau joueur
+            return jsonify({
+                "status": "not_found", 
+                "message": "Données Skull Arena introuvables. Initialisation...",
+                "data": {
+                    "skulls": 0,
+                    "best_wave": 0,
+                    "levels": {"damage": 0, "range": 0, "speed": 0, "fire": 0}
+                }
+            }), 200 
+
+
+        row = response.data[0]
+        
+        # Mappe et renvoie les données
+        return jsonify({
+            "status": "success",
+            "message": "Données Skull Arena chargées",
+            "data": {
+                "skulls": int(row.get('Crane', 0)),
+                "best_wave": int(row.get('Best_Vague', 0)),
+                "levels": {
+                    "damage": int(row.get('UP_Degat', 0)),
+                    "range": int(row.get('UP_Portée', 0)),
+                    "speed": int(row.get('UP_Vitesse', 0)),
+                    "fire": int(row.get('UP_Cadence', 0))
+                }
+            }
+        }), 200
+
+    except Exception as e:
+        print(f"[LOAD SKULL ARENA ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
