@@ -958,6 +958,46 @@ def skull_arena_get_data():
         print(f"[LOAD SKULL ARENA ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/skull_arena_get_leaderboard', methods=['GET'])
+def skull_arena_get_leaderboard():
+    """
+    Récupère les 10 meilleurs scores (Best_Vague) du classement global.
+    """
+    try:
+        # Requête Supabase:
+        # 1. Sélectionne 'username' et 'Best_Vague'
+        # 2. Trie par 'Best_Vague' en ordre décroissant (DESC)
+        # 3. Limite les résultats aux 10 premiers (LIMIT 10)
+        response = supabase.table(TABLE_NAME_Skull_Arena) \
+            .select("username, Best_Vague") \
+            .order("Best_Vague", desc=True) \
+            .limit(10) \
+            .execute()
+        
+        # Le format de données de Supabase est une liste de dictionnaires:
+        # [{'username': 'Name1', 'Best_Vague': 1000}, ...]
+        
+        # Mappage pour correspondre au format attendu par le client JS
+        formatted_data = []
+        for row in response.data:
+            formatted_data.append({
+                "name": row.get('username'),
+                "wave": int(row.get('Best_Vague', 0)) # Assurer que c'est un entier
+            })
+
+        return jsonify({
+            "status": "success",
+            "message": "Classement global chargé.",
+            "data": formatted_data
+        }), 200
+
+    except Exception as e:
+        print(f"[LOAD LEADERBOARD ERROR] {e}")
+        return jsonify({
+            "status": "error", 
+            "message": "Échec de la récupération du classement: " + str(e)
+        }), 500
+
 
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
