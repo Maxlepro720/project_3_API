@@ -48,6 +48,8 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Nom de votre table de sauvegarde Skull Arena
 TABLE_NAME_Skull_Arena = "Skull_Arena_DataBase"
+# Nom de votre table de sauvegarde Astro Dodge
+TABLE_NAME_ASTRO_DODGE = "Astro_Dodge"
 
 # ----------------------------------------------------------------------
 # --- UTILITIES ---
@@ -998,6 +1000,155 @@ def skull_arena_get_leaderboard():
             "message": "Échec de la récupération du classement: " + str(e)
         }), 500
 
+# ----------------------------------------------------------------------
+# --- ROUTES ASTRO DODGE (Sauvegarde & Score) ---
+# ----------------------------------------------------------------------
+
+@app.route('/astro/save_data', methods=['POST'])
+def save_astro_data():
+    """
+    Sauvegarde ou met à jour les données du joueur (Score, Pièces, Voiture).
+    S'inspire de la logique d'upsert pour créer l'entrée si l'utilisateur
+    n'existe pas, ou la mettre à jour s'il existe.
+    """
+    if request.method == 'OPTIONS':
+        return build_cors_preflight_response()
+    
+    data = request.get_json(silent=True)
+    if not data or 'username' not in data:
+        return jsonify({"status": "error", "message": "Nom d'utilisateur manquant."}), 400
+
+    username = data['username'].strip()
+    
+    # Données à mettre à jour (utilisez .get pour éviter les erreurs si des clés sont manquantes)
+    update_data = {}
+    
+    # Le score est mis à jour SEULEMENT s'il est meilleur que le PR_Score actuel.
+    new_score = data.get('PR_Score')
+    new_coins = data.get('Coins')
+    new_car = data.get('Voiture')
+    
+    # 1. Tenter de récupérer les données actuelles
+    try:
+        current_data_query = supabase.table(TABLE_NAME_ASTRO_DODGE)\
+            .select("PR_Score, Coins")\
+            .eq("username", username)\
+            .execute()
+        
+        current_data = current_data_query.data[0] if current_data_query.data else None
+        
+        # 2. Logique de mise à jour du Score (High Score)
+        if new_score is not None:
+            new_score = int(new_score)
+            current_score = current_data['PR_Score'] if current_data and current_data['PR_Score'] is not None else 0
+            
+            if new_score > current_score:
+                update_data["PR_Score"] = new_score
+                print(f"[ASTRO] Nouveau PR Score pour {username}: {new_score}")
+            # Si l'entrée n'existe pas, on met quand même le score.
+            elif current_data is None:
+                update_data["PR_Score"] = new_score
+
+
+        # 3. Logique de mise à jour des Pièces (cumulatif)
+        # On suppose que les 'Coins' envoyés sont le TOTAL, ou que c'est l'API de jeu qui gère le cumul.
+        # Ici, nous traitons 'Coins' comme le total que le client doit envoyer.
+        if new_coins is not None:
+             update_data["Coins"] = int(new_coins)
+        
+        # 4. Mise à jour de la Voiture (si fournie)
+        if new_car is not None:
+            update_data["Voiture"] = str(new_car)
+
+        # 5. Effectuer l'opération d'upsert (insert ou update)
+        if current_data is None:
+            # Insertion (création de l'utilisateur)
+            insert_data = {"username": username, **update_data}
+            
+            # Assurer les valeurs par défaut si non fournies
+            insert_data.setdefault("PR_Score", 0) 
+            insert_data.setdefault("Coins", 0)
+            insert_data.setdefault("Voiture", "")
+            
+            supabase.table(TABLE_NAME_ASTRO_DODGE).insert([insert_data]).execute()
+            message = "Nouvel utilisateur Astro Dodge créé et données sauvegardées."
+        elif update_data:
+            # Mise à jour (si au moins une donnée a changé)
+            supabase.table(TABLE_NAME_ASTRO_DODGE)\
+                .update(update_data)\
+                .eq("username", username)\
+                .execute()
+            message = "Données Astro Dodge mises à jour."
+        else:
+            message = "Aucune donnée à mettre à jour."
+            return jsonify({"status": "success", "message": message}), 200
+
+        return jsonify({"status": "success", "message": message, "updated_data": update_data}), 200
+
+    except Exception as e:
+        print(f"[ASTRO SAVE ERROR] {e}")
+        return jsonify({"status": "error", "message": f"Erreur de base de données lors de la sauvegarde: {str(e)}"}), 500
+
+@app.route('/astro/load_data/<username>', methods=['GET'])
+def load_astro_data(username):
+    """
+    Charge les données de sauvegarde du joueur Astro Dodge.
+    """
+    if request.method == 'OPTIONS':
+        return build_cors_preflight_response()
+    
+    if not username:
+        return jsonify({"status": "error", "message": "Nom d'utilisateur manquant."}), 400
+
+    username = username.strip()
+
+    try:
+        # Récupère toutes les colonnes pour l'utilisateur
+        result = supabase.table(TABLE_NAME_ASTRO_DODGE)\
+            .select("*")\
+            .eq("username", username)\
+            .single()\
+            .execute()
+            
+        data = result.data
+
+        return jsonify({"status": "success", "data": data}), 200
+
+    except Exception:
+        # Si single() échoue, c'est probablement parce que l'utilisateur n'existe pas.
+        # On retourne un profil par défaut.
+        default_data = {
+            "username": username,
+            "PR_Score": 0,
+            "Coins": 0,
+            "Voiture": "" # Chaîne vide pour la voiture par défaut
+        }
+        return jsonify({"status": "not_found", "message": "Utilisateur non trouvé, profil par défaut retourné.", "data": default_data}), 200
+
+
+@app.route('/astro/leaderboard', methods=['GET'])
+def get_astro_leaderboard():
+    """
+    Calcule et retourne le tableau des scores (Leaderboard) basé sur le PR_Score.
+    """
+    if request.method == 'OPTIONS':
+        return build_cors_preflight_response()
+    
+    try:
+        # Récupère le top 100, trié par PR_Score descendant
+        result = supabase.table(TABLE_NAME_ASTRO_DODGE)\
+            .select("username, PR_Score")\
+            .order("PR_Score", desc=True)\
+            .limit(100)\
+            .execute()
+            
+        leaderboard = result.data
+
+        return jsonify({"status": "success", "leaderboard": leaderboard}), 200
+
+    except Exception as e:
+        print(f"[ASTRO LEADERBOARD ERROR] {e}")
+        return jsonify({"status": "error", "message": f"Erreur lors de la récupération du classement: {str(e)}"}), 500
 
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
