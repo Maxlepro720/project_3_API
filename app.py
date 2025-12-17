@@ -1007,9 +1007,8 @@ def skull_arena_get_leaderboard():
 @app.route('/astro/save_data', methods=['POST'])
 def save_astro_data():
     """
-    Sauvegarde ou met à jour les données du joueur (Score, Pièces, Voiture).
-    S'inspire de la logique d'upsert pour créer l'entrée si l'utilisateur
-    n'existe pas, ou la mettre à jour s'il existe.
+    Sauvegarde ou met à jour les données du joueur (Score, Pièces, Voitures débloquées).
+    Voiture: stocke la chaîne des noms de voitures débloquées (ex: "Standard,Rapide,Titan").
     """
     if request.method == 'OPTIONS':
         return build_cors_preflight_response()
@@ -1020,13 +1019,12 @@ def save_astro_data():
 
     username = data['username'].strip()
     
-    # Données à mettre à jour (utilisez .get pour éviter les erreurs si des clés sont manquantes)
     update_data = {}
     
-    # Le score est mis à jour SEULEMENT s'il est meilleur que le PR_Score actuel.
     new_score = data.get('PR_Score')
     new_coins = data.get('Coins')
-    new_car = data.get('Voiture')
+    # Le champ Voiture doit contenir la CHAÎNE COMPLÈTE des voitures débloquées.
+    unlocked_cars_string = data.get('Voiture') 
     
     # 1. Tenter de récupérer les données actuelles
     try:
@@ -1042,33 +1040,34 @@ def save_astro_data():
             new_score = int(new_score)
             current_score = current_data['PR_Score'] if current_data and current_data['PR_Score'] is not None else 0
             
-            if new_score > current_score:
+            # Mise à jour du score seulement s'il est meilleur, ou si c'est une nouvelle entrée
+            if new_score > current_score or current_data is None:
                 update_data["PR_Score"] = new_score
-                print(f"[ASTRO] Nouveau PR Score pour {username}: {new_score}")
-            # Si l'entrée n'existe pas, on met quand même le score.
-            elif current_data is None:
-                update_data["PR_Score"] = new_score
+                if current_data is None:
+                    print(f"[ASTRO] Nouvel utilisateur créé avec score: {new_score}")
+                else:
+                    print(f"[ASTRO] Nouveau PR Score pour {username}: {new_score}")
 
 
-        # 3. Logique de mise à jour des Pièces (cumulatif)
-        # On suppose que les 'Coins' envoyés sont le TOTAL, ou que c'est l'API de jeu qui gère le cumul.
-        # Ici, nous traitons 'Coins' comme le total que le client doit envoyer.
+        # 3. Logique de mise à jour des Pièces (total)
         if new_coins is not None:
              update_data["Coins"] = int(new_coins)
         
-        # 4. Mise à jour de la Voiture (si fournie)
-        if new_car is not None:
-            update_data["Voiture"] = str(new_car)
+        # 4. Mise à jour des Voitures débloquées (si fournie)
+        # On enregistre la chaîne de caractères telle qu'envoyée par le client
+        if unlocked_cars_string is not None:
+            update_data["Voiture"] = str(unlocked_cars_string)
 
         # 5. Effectuer l'opération d'upsert (insert ou update)
         if current_data is None:
             # Insertion (création de l'utilisateur)
             insert_data = {"username": username, **update_data}
             
-            # Assurer les valeurs par défaut si non fournies
+            # Assurer les valeurs par défaut
             insert_data.setdefault("PR_Score", 0) 
             insert_data.setdefault("Coins", 0)
-            insert_data.setdefault("Voiture", "")
+            # Par défaut, seule la "Standard" est débloquée
+            insert_data.setdefault("Voiture", "Standard") 
             
             supabase.table(TABLE_NAME_ASTRO_DODGE).insert([insert_data]).execute()
             message = "Nouvel utilisateur Astro Dodge créé et données sauvegardées."
@@ -1121,7 +1120,8 @@ def load_astro_data(username):
             "username": username,
             "PR_Score": 0,
             "Coins": 0,
-            "Voiture": "" # Chaîne vide pour la voiture par défaut
+            # Correction: Par défaut, seule la voiture "Standard" est débloquée
+            "Voiture": "Standard" 
         }
         return jsonify({"status": "not_found", "message": "Utilisateur non trouvé, profil par défaut retourné.", "data": default_data}), 200
 
@@ -1130,16 +1130,17 @@ def load_astro_data(username):
 def get_astro_leaderboard():
     """
     Calcule et retourne le tableau des scores (Leaderboard) basé sur le PR_Score.
+    CORRECTION: Limité au TOP 5.
     """
     if request.method == 'OPTIONS':
         return build_cors_preflight_response()
     
     try:
-        # Récupère le top 100, trié par PR_Score descendant
+        # CORRECTION APPLIQUÉE: Limiter au top 5
         result = supabase.table(TABLE_NAME_ASTRO_DODGE)\
             .select("username, PR_Score")\
             .order("PR_Score", desc=True)\
-            .limit(100)\
+            .limit(5)\
             .execute()
             
         leaderboard = result.data
@@ -1149,7 +1150,6 @@ def get_astro_leaderboard():
     except Exception as e:
         print(f"[ASTRO LEADERBOARD ERROR] {e}")
         return jsonify({"status": "error", "message": f"Erreur lors de la récupération du classement: {str(e)}"}), 500
-
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
 # ----------------------------------------------------------------------
