@@ -13,6 +13,10 @@ from datetime import datetime, timedelta, timezone
 MAX_SESSION_CODE_LENGTH = 14
 MAX_PLAYERS_PER_SESSION = 5 
 # ---------------------------------
+# --- VALEURS PAR DÉFAUT (À DÉFINIR AU SOMMET DE VOTRE FICHIER PYTHON) ---
+DEFAULT_GRADE = "Poussière"
+DEFAULT_SCORE = 0
+DEFAULT_CREDIT = 0
 
 app = Flask(__name__)
 CORS(app, origins=["https://clickerbutmultiplayer.xo.je"])
@@ -1152,150 +1156,115 @@ def get_astro_leaderboard():
         print(f"[ASTRO LEADERBOARD ERROR] {e}")
         return jsonify({"status": "error", "message": f"Erreur lors de la récupération du classement: {str(e)}"}), 500
 
-@app.route('/stickman_runner/save_data', methods=['POST'])
-def save_stickman_runner_data():
-    """
-    Sauvegarde ou met à jour les données du joueur (best_score, credit, grade).
-    """
-    if request.method == 'OPTIONS':
-        return build_cors_preflight_response()
-    
-    data = request.get_json(silent=True)
-    if not data or 'username' not in data:
-        return jsonify({"status": "error", "message": "Nom d'utilisateur manquant."}), 400
-
-    username = data['username'].strip()
-    
-    update_data = {}
-    
-    # Mappage des champs du jeu vers les colonnes de la DB
-    new_best_score = data.get('best_score')
-    new_credit = data.get('credit') # Argent total du joueur
-    new_grade = data.get('grade')   # Nom du grade (ex: "N. Mercure")
-
-    # 1. Tenter de récupérer les données actuelles (Score et Credit suffisent pour la logique)
-    try:
-        current_data_query = supabase.table(TABLE_NAME_STICKMAN_RUNNER)\
-            .select("best_score, credit")\
-            .eq("username", username)\
-            .execute()
-        
-        current_data = current_data_query.data[0] if current_data_query.data else None
-        
-        # 2. Logique de mise à jour du Meilleur Score (best_score)
-        if new_best_score is not None:
-            new_best_score = int(new_best_score)
-            current_score = current_data['best_score'] if current_data and current_data['best_score'] is not None else 0
-            
-            # Mise à jour du score seulement s'il est meilleur
-            if new_best_score > current_score or current_data is None:
-                update_data["best_score"] = new_best_score
-                if current_data is None:
-                    print(f"[STICKMAN] Nouvel utilisateur créé avec score: {new_best_score}")
-                else:
-                    print(f"[STICKMAN] Nouveau Best Score pour {username}: {new_best_score}")
-
-        # 3. Logique de mise à jour des Crédits (credit)
-        if new_credit is not None:
-            update_data["credit"] = int(new_credit)
-        
-        # 4. Logique de mise à jour du Grade (grade)
-        if new_grade is not None:
-            update_data["grade"] = str(new_grade)
-
-
-        # 5. Effectuer l'opération d'upsert (insert ou update)
-        if current_data is None:
-            # Insertion (création de l'utilisateur)
-            insert_data = {"username": username, **update_data}
-            
-            # Assurer les valeurs par défaut selon le schéma
-            insert_data.setdefault("best_score", 0)  
-            insert_data.setdefault("credit", 0)
-            insert_data.setdefault("grade", "Poussière") # Grade par défaut
-            
-            supabase.table(TABLE_NAME_STICKMAN_RUNNER).insert([insert_data]).execute()
-            message = "Nouvel utilisateur Stickman Runner créé et données sauvegardées."
-        elif update_data:
-            # Mise à jour (si au moins une donnée a changé)
-            supabase.table(TABLE_NAME_STICKMAN_RUNNER)\
-                .update(update_data)\
-                .eq("username", username)\
-                .execute()
-            message = "Données Stickman Runner mises à jour."
-        else:
-            message = "Aucune donnée à mettre à jour."
-            return jsonify({"status": "success", "message": message}), 200
-
-        return jsonify({"status": "success", "message": message, "updated_data": update_data}), 200
-
-    except Exception as e:
-        print(f"[STICKMAN SAVE ERROR] {e}")
-        return jsonify({"status": "error", "message": f"Erreur de base de données lors de la sauvegarde: {str(e)}"}), 500
-
-
-@app.route('/stickman_runner/load_data/<username>', methods=['GET'])
+@app.route('/stickman_runner/load_data/<username>', methods=['GET', 'OPTIONS'])
 def load_stickman_runner_data(username):
-    """
-    Charge les données de sauvegarde du joueur Stickman Runner.
-    """
     if request.method == 'OPTIONS':
-        return build_cors_preflight_response()
-    
-    if not username:
-        return jsonify({"status": "error", "message": "Nom d'utilisateur manquant."}), 400
-
-    username = username.strip()
+        return build_cors_preflight_response() 
 
     try:
-        # Récupère toutes les colonnes pour l'utilisateur
-        result = supabase.table(TABLE_NAME_STICKMAN_RUNNER)\
-            .select("*")\
-            .eq("username", username)\
-            .single()\
-            .execute()
+        user_data = StickmanData.query.filter_by(username=username).first()
+        
+        if user_data:
+            data_to_return = {
+                "username": user_data.username,
+                "best_score": user_data.best_score,
+                "credit": user_data.credit,
+                "grade": user_data.grade
+            }
+        else:
+            new_user = StickmanData(
+                username=username,
+                best_score=DEFAULT_SCORE,
+                credit=DEFAULT_CREDIT,
+                grade=DEFAULT_GRADE
+            )
+            db.session.add(new_user)
+            db.session.commit()
             
-        data = result.data
+            data_to_return = {
+                "username": username,
+                "best_score": DEFAULT_SCORE,
+                "credit": DEFAULT_CREDIT,
+                "grade": DEFAULT_GRADE
+            }
 
-        return jsonify({"status": "success", "data": data}), 200
-
-    except Exception:
-        # Si single() échoue, c'est probablement parce que l'utilisateur n'existe pas.
-        # On retourne un profil par défaut.
-        default_data = {
-            "username": username,
-            "best_score": 0,
-            "credit": 0,
-            "grade": "Poussière"
-        }
-        return jsonify({"status": "not_found", "message": "Utilisateur non trouvé, profil par défaut retourné.", "data": default_data}), 200
-
-
-@app.route('/stickman_runner/leaderboard', methods=['GET'])
-def get_stickman_runner_leaderboard():
-    """
-    Calcule et retourne le tableau des scores (Leaderboard) basé sur le best_score.
-    Limité au TOP 3.
-    """
-    if request.method == 'OPTIONS':
-        return build_cors_preflight_response()
-    
-    try:
-        # Restriction au TOP 3 comme demandé
-        result = supabase.table(TABLE_NAME_STICKMAN_RUNNER)\
-            .select("username, best_score, grade")\
-            .order("best_score", desc=True)\
-            .limit(3)\
-            .execute()
-            
-        leaderboard = result.data
-
-        return jsonify({"status": "success", "leaderboard": leaderboard}), 200
+        response = jsonify({"status": "success", "data": data_to_return})
+        return add_cors_headers(response)
 
     except Exception as e:
-        print(f"[STICKMAN LEADERBOARD ERROR] {e}")
-        return jsonify({"status": "error", "message": f"Erreur lors de la récupération du classement: {str(e)}"}), 500
+        db.session.rollback()
+        response = jsonify({"status": "error", "message": f"Erreur de base de données: {e}"})
+        return add_cors_headers(response), 500
 
+
+@app.route('/stickman_runner/save_data', methods=['POST', 'OPTIONS'])
+def save_stickman_runner_data():
+    if request.method == 'OPTIONS':
+        return build_cors_preflight_response() 
+
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        best_score = data.get('best_score', 0)
+        credit = data.get('credit', 0)
+        grade = data.get('grade')
+        
+        if not username:
+            response = jsonify({"status": "error", "message": "Nom d'utilisateur manquant."})
+            return add_cors_headers(response), 400
+
+        user_data = StickmanData.query.filter_by(username=username).first()
+        
+        # L'utilisateur existe toujours car il a été créé par load_data
+        if user_data:
+            if best_score > user_data.best_score:
+                user_data.best_score = best_score
+            
+            user_data.credit = credit 
+            user_data.grade = grade
+            
+            db.session.commit()
+            
+            response = jsonify({"status": "success", "message": "Données mises à jour."})
+            return add_cors_headers(response)
+        
+        # Cas d'erreur où le load n'a pas été appelé ou a échoué
+        response = jsonify({"status": "error", "message": "Utilisateur non trouvé pour la sauvegarde."})
+        return add_cors_headers(response), 404
+
+
+    except Exception as e:
+        db.session.rollback()
+        response = jsonify({"status": "error", "message": f"Erreur de base de données: {e}"})
+        return add_cors_headers(response), 500
+
+
+@app.route('/stickman_runner/leaderboard', methods=['GET', 'OPTIONS'])
+def get_leaderboard():
+    if request.method == 'OPTIONS':
+        return build_cors_preflight_response()
+    
+    try:
+        # Récupère les 10 meilleurs scores, triés par meilleur score descendant
+        top_scores = StickmanData.query.order_by(StickmanData.best_score.desc()).limit(10).all()
+        
+        leaderboard_data = []
+        for user in top_scores:
+            leaderboard_data.append({
+                "username": user.username,
+                "best_score": user.best_score,
+                "grade": user.grade
+            })
+
+        response = jsonify({
+            "status": "success",
+            "leaderboard": leaderboard_data
+        })
+        return add_cors_headers(response)
+
+    except Exception as e:
+        response = jsonify({"status": "error", "message": f"Erreur de base de données: {e}"})
+        return add_cors_headers(response), 500
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
 # ----------------------------------------------------------------------
