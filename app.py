@@ -1156,7 +1156,7 @@ def get_astro_leaderboard():
         print(f"[ASTRO LEADERBOARD ERROR] {e}")
         return jsonify({"status": "error", "message": f"Erreur lors de la récupération du classement: {str(e)}"}), 500
 
-@app.route(f"/{TABLE_NAME_STICKMAN_RUNNER}/load_data/<username>", methods=['GET', 'OPTIONS'])
+@app.route(f"/stickman_runner/load_data/<username>", methods=['GET', 'OPTIONS'])
 def load_stickman_runner_data(username):
     if request.method == 'OPTIONS':
         # Gestion du CORS preflight
@@ -1194,7 +1194,7 @@ def load_stickman_runner_data(username):
 
 
 # 2. SAVE (Sauvegarde des données)
-@app.route(f"/{TABLE_NAME_STICKMAN_RUNNER}/save_data", methods=['POST', 'OPTIONS'])
+@app.route(f"/stickman_runner/save_data", methods=['POST', 'OPTIONS'])
 def save_stickman_runner_data():
     if request.method == 'OPTIONS':
         return options_handler(f"/{TABLE_NAME_STICKMAN_RUNNER}/save_data")
@@ -1238,7 +1238,7 @@ def save_stickman_runner_data():
 
 
 # 3. LEADERBOARD (Classement)
-@app.route(f"/{TABLE_NAME_STICKMAN_RUNNER}/leaderboard", methods=['GET', 'OPTIONS'])
+@app.route(f"/stickman_runner/leaderboard", methods=['GET', 'OPTIONS'])
 def get_stickman_runner_leaderboard():
     if request.method == 'OPTIONS':
         return options_handler(f"/{TABLE_NAME_STICKMAN_RUNNER}/leaderboard")
