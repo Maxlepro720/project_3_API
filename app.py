@@ -188,9 +188,7 @@ def update_last_seen():
         if player_id:
             player_id = player_id.strip() 
             if player_id:
-                supabase.table("Player").update({
-                    "Status": "🟢 online" 
-                }).eq("ID", player_id).execute()
+                supabase.table("Player").update({ "Status": "🟢 online", "Last_Seen": datetime.now(timezone.utc).isoformat() }).eq("ID", player_id).execute()
                 
     except Exception:
         pass
@@ -199,16 +197,25 @@ def update_last_seen():
 # --- TÂCHE D'ARRIÈRE-PLAN POUR LA VÉRIFICATION D'INACTIVITÉ ---
 # ----------------------------------------------------------------------
 def check_player_activity():
-    """Vérifie périodiquement les joueurs inactifs."""
-    print("[SCHEDULER] Le vérificateur d'activité est démarré.")
     while True:
+        # 1. Le thread se met en pause pendant 15 secondes
+        time.sleep(15) 
+        
         try:
-            # Cette fonction pourrait être développée pour mettre les joueurs offline après N secondes d'inactivité
-            pass 
-        except Exception as e:
-            print(f"[SCHEDULER_ERROR] Erreur lors de la vérification d'activité: {e}")
-        time.sleep(10)
 
+            inactivity_limit = datetime.now(timezone.utc) - timedelta(seconds=15)
+            inactivity_limit_iso = inactivity_limit.isoformat()
+
+            response = supabase.table("Player").update({
+                "Status": "🔴 offline"
+            }).lt(
+                "Last_Seen", inactivity_limit_iso
+            ).eq(
+                "Status", "🟢 online"
+            ).execute()
+        except Exception as e:
+            # Gérer toute autre erreur inattendue pour ne pas arrêter le thread
+            print(f"Erreur inattendue dans le thread d'activité: {e}")
 # ----------------------------------------------------------------------
 # --- ROUTES FLASK ---
 # ----------------------------------------------------------------------
