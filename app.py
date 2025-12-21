@@ -1267,20 +1267,24 @@ def get_stickman_runner_leaderboard():
         print(f"[LEADERBOARD ERROR] {e}")
         return jsonify({"status": "error", "message": f"Server Error during leaderboard: {str(e)}"}), 500
 
+# (Assurez-vous que RENDER_API_KEY et RENDER_SERVICE_ID sont définis au niveau du module/script)
+# Exemple de déclaration (vos valeurs réelles doivent être au-dessus des routes):
+# RENDER_API_KEY = "rnd_vAPZzfcps0xotIbfFEwydEwuwKaF"
+# RENDER_SERVICE_ID = "srv-d3ao1bpgv73c739csfb0"
+
+
 @app.route("/get_server_logs", methods=["GET"])
 def get_logs():
     """
-    Agit comme un proxy pour récupérer les logs du service API de Render, 
-    en utilisant les variables déclarées directement dans ce script.
+    Agit comme un proxy (relais serveur) pour récupérer les logs du service API de Render.
+    Ceci contourne le blocage CORS du navigateur.
     """
     
-    # Les variables RENDER_API_KEY et RENDER_SERVICE_ID sont utilisées directement ici.
-    
+    # Utilisez les variables qui sont déclarées en haut de votre script
+    # Si elles ne sont pas trouvées (par exemple, si elles sont mal nommées ou manquantes), gérez l'erreur.
     if not RENDER_API_KEY or not RENDER_SERVICE_ID:
-        # Bien que vous ayez déclaré les variables, cette vérification peut 
-        # être utile si elles sont vides ou si un problème de scope est rencontré.
         return jsonify({
-            "message": "Erreur de configuration: Les clés d'API Render sont manquantes ou non définies dans la portée du module."
+            "message": "Erreur de configuration serveur: Les variables RENDER_API_KEY ou RENDER_SERVICE_ID ne sont pas définies dans le script Python."
         }), 500
 
     # 1. Construction de l'URL de l'API Render
@@ -1288,32 +1292,39 @@ def get_logs():
     
     # 2. En-têtes avec la clé secrète
     headers = {
-        # La clé est lue directement depuis la variable du module
-        "Authorization": f"Bearer {RENDER_API_KEY}", 
-        "Accept": "text/plain"
+        "Authorization": f"Bearer {RENDER_API_KEY}",
+        "Accept": "text/plain"  # Demande le format texte brut
     }
 
     try:
-        # 3. Appel HTTP côté serveur
+        # 3. Appel HTTP côté serveur (requests.get)
         response = requests.get(log_url, headers=headers, timeout=10)
         
         # 4. Vérification du statut de l'API Render
-        response.raise_for_status() 
+        response.raise_for_status() # Lève une exception si le statut est 4xx ou 5xx
         
-        # 5. Retourne les logs (texte brut)
+        # 5. Retourne les logs (texte brut) directement au front-end
+        # Le hook @app.after_request ajoutera les en-têtes CORS automatiquement
         return Response(
             response.text,
             status=200,
-            mimetype='text/plain'
+            mimetype='text/plain' # Important pour l'affichage en brut dans <pre>
         )
 
     except requests.exceptions.HTTPError as e:
+        # Erreur côté API Render (ex: clé invalide, service non trouvé)
         return jsonify({
-            "message": f"Échec de l'appel à l'API Render. Code d'erreur: {response.status_code}. Détail: {e}"
+            "message": f"Échec de l'appel à l'API Render. Code: {response.status_code}. Vérifiez la configuration de la clé: {e}"
         }), 500
     except requests.exceptions.RequestException as e:
+        # Erreur de connexion (timeout, DNS, etc.)
         return jsonify({
             "message": f"Erreur de connexion serveur: Impossible de joindre api.render.com. Détail: {e}"
+        }), 500
+    except Exception as e:
+        # Autres erreurs inattendues
+        return jsonify({
+            "message": f"Erreur inattendue lors de la récupération des logs: {e}"
         }), 500
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
