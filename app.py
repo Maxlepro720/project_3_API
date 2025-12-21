@@ -336,8 +336,8 @@ def skull_arena_get_leaderboard():
 # ------------------------------------------------
 @app.route('/astro_dodge_update_data', methods=['POST'])
 def astro_dodge_update_data():
-    """ [Astro_Dodge_ServerSave] Met à jour le meilleur score et le crédit du joueur.
-    Table : Astro_Dodge, Colonnes : username, "PR_Score", "Coins"
+    """ [Astro_Dodge_ServerSave] Met à jour le meilleur score, le crédit et les vaisseaux débloqués du joueur.
+    Table : Astro_Dodge, Colonnes : username, "PR_Score", "Coins", "Voiture"
     """
     data = request.get_json(force=True)
     username = (data.get('username') or "").strip()
@@ -345,19 +345,22 @@ def astro_dodge_update_data():
         return jsonify({"status": "error", "message": "Username manquant"}), 400
     try:
         new_score = int(data.get('score', 0))
+        # CORRECTION 3: Récupération de la chaîne de voitures
+        new_voiture_string = (data.get('Voiture') or "Standard").strip()
         
-        # 1. Fetcher le meilleur score actuel (COLONNE CORRIGÉE : "PR_Score")
+        # 1. Fetcher le meilleur score actuel (la logique de comparaison reste intacte)
         current_data_query = supabase.table(TABLE_NAME_ASTRO_DODGE).select('"PR_Score"').eq('username', username).limit(1).execute()
         current_data = current_data_query.data[0] if current_data_query.data else None
-        # CLÉ DE RÉPONSE CORRIGÉE : "PR_Score"
         current_best_score = current_data.get('PR_Score', 0) if current_data else 0
         final_best_score = max(current_best_score, new_score)
         
-        # 2. Préparer le payload (COLONNES CORRIGÉES : "PR_Score", "Coins")
+        # 2. Préparer le payload
         payload = {
             "username": username,
-            "PR_Score": final_best_score, # CORRIGÉ
-            "Coins": int(data.get('credit', 0)) # CORRIGÉ
+            "PR_Score": final_best_score,
+            "Coins": int(data.get('credit', 0)),
+            # CORRECTION 4: Ajout de la clé "Voiture" au payload de l'upsert
+            "Voiture": new_voiture_string 
         }
         
         # 3. Effectuer l'UPSERT
@@ -372,38 +375,41 @@ def astro_dodge_update_data():
 
 @app.route('/astro_dodge_get_data', methods=['POST'])
 def astro_dodge_get_data():
-    """ [Astro_Dodge_ServerLoad] Récupère les données d'un joueur.
+    """ [Astro_Dodge_ServerLoad] Récupère les données d'un joueur, y compris les vaisseaux débloqués.
     """
     data = request.get_json(force=True)
     username = (data.get('username') or "").strip()
     if not username:
         return jsonify({"status": "error", "message": "Username manquant"}), 400
     try:
-        # COLONNES CORRIGÉES : "PR_Score", "Coins"
-        columns = '"PR_Score", "Coins"'
+        # CORRECTION 1: Ajout de "Voiture" à la sélection des colonnes
+        columns = '"PR_Score", "Coins", "Voiture"' 
         response = supabase.table(TABLE_NAME_ASTRO_DODGE).select(columns).eq('username', username).limit(1).execute()
         
         if not response.data:
             return jsonify({
                 "status": "not_found", 
                 "message": "Données Astro Dodge introuvables. Initialisation...",
-                "data": {"score": 0, "credit": 0}
+                # J'initialise 'Voiture' ici aussi, par sécurité, même si le client a un fallback
+                "data": {"score": 0, "credit": 0, "Voiture": "Standard"} 
             }), 200
-        
+            
         row = response.data[0]
         # CLÉS DE RÉPONSE CORRIGÉES
         return jsonify({
             "status": "success", 
             "message": "Données Astro Dodge chargées",
             "data": {
-                "score": int(row.get('PR_Score', 0)), # CORRIGÉ
-                "credit": int(row.get('Coins', 0)) # CORRIGÉ
+                "score": int(row.get('PR_Score', 0)),
+                "credit": int(row.get('Coins', 0)),
+                # CORRECTION 2: Ajout de la clé "Voiture" dans la réponse
+                "Voiture": row.get('Voiture', 'Standard') 
             }
         }), 200
     except Exception as e:
         print(f"[LOAD ASTRO DODGE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
+        
 @app.route('/astro_dodge_get_leaderboard', methods=['GET'])
 def astro_dodge_get_leaderboard():
     """ Récupère les 10 meilleurs scores ("PR_Score") du classement global.
