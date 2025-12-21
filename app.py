@@ -534,6 +534,71 @@ def stickman_runner_get_leaderboard():
         print(f"[LEADERBOARD STICKMAN RUNNER ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/get_all_players_status', methods=['GET', 'OPTIONS'])
+def get_all_players_status():
+    """
+    Récupère tous les joueurs et les trie :
+    1. Tous les joueurs "🟢 online".
+    2. Tous les joueurs "🔴 offline", triés par 'last_seen' du plus récent au plus ancien.
+    """
+    if request.method == "OPTIONS":
+        return build_cors_preflight_response()
+
+    try:
+        # 1. Récupérer tous les joueurs avec les colonnes nécessaires
+        # Colonnes de la table Player : ID, Status, last_seen
+        response = supabase.table(TABLE_NAME_Player).select("ID, Status, last_seen").execute()
+        all_players = response.data
+
+        online_players = []
+        offline_players = []
+
+        # 2. Séparer les joueurs en ligne et hors ligne
+        for player in all_players:
+            player_data = {
+                "id": player.get("ID"),
+                "status": player.get("Status", "🔴 offline"),
+                "last_seen": player.get("last_seen")
+            }
+            if player_data["status"] == "🟢 online":
+                online_players.append(player_data)
+            else:
+                offline_players.append(player_data)
+
+        # 3. Trier les joueurs hors ligne par 'last_seen' (du plus récent au plus ancien)
+        # Convertit la chaîne last_seen en objet datetime pour un tri correct, gère les None
+        def sort_key(player):
+            last_seen_str = player.get("last_seen")
+            if last_seen_str:
+                try:
+                    # Assurez-vous que le format est correct (Supabase utilise l'ISO 8601)
+                    return datetime.fromisoformat(last_seen_str.replace('Z', '+00:00'))
+                except ValueError:
+                    return datetime.min.replace(tzinfo=timezone.utc) # Date très ancienne pour les erreurs
+            return datetime.min.replace(tzinfo=timezone.utc) # Date très ancienne pour les joueurs sans last_seen
+
+        # Tri inverse (descendant) pour le plus récent d'abord
+        offline_players.sort(key=sort_key, reverse=True)
+
+        # 4. Combiner la liste (Online d'abord, puis Offline triés)
+        final_list = online_players + offline_players
+
+        # 5. Renvoyer la liste
+        response = jsonify({
+            "status": "success",
+            "message": f"Liste de {len(final_list)} joueurs récupérée.",
+            "data": final_list
+        })
+        # Ajout des headers CORS dans le handler OPTIONS, mais aussi ici pour le GET
+        response.headers.add("Access-Control-Allow-Origin", "https://clickerbutmultiplayer.xo.je")
+        return response, 200
+
+    except Exception as e:
+        print(f"[GET ALL PLAYERS ERROR] {e}")
+        response = jsonify({"status": "error", "message": str(e)})
+        response.headers.add("Access-Control-Allow-Origin", "https://clickerbutmultiplayer.xo.je")
+        return response, 500
+
 
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
