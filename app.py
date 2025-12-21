@@ -173,26 +173,51 @@ def rename_session_logic(player_id, old_code, new_code):
 # --- HOOK DE MISE À JOUR D'ACTIVITÉ (S'exécute avant chaque requête) ---
 # ----------------------------------------------------------------------
 @app.before_request
+from datetime import datetime, timezone # Assurez-vous que ces imports sont en haut du fichier
+
+@app.before_request
 def update_last_seen():
-    """Met à jour le statut du joueur à 'online'."""
+    """Met à jour le statut du joueur à 'online' et l'horodatage Last_Seen."""
     player_id = None
     
+    # 1. Tentative d'extraction du player_id à partir de la requête
     try:
+        # Tente de lire le JSON pour les méthodes POST/PUT
         if request.method in ["POST", "PUT"]:
-            data = request.get_json(silent=True)
+            # silent=True évite l'échec total si le corps n'est pas du JSON
+            data = request.get_json(silent=True) 
             if data:
+                # Cherche les clés courantes dans le corps JSON
                 player_id = (data.get("id") or data.get("player_id") or data.get("username"))
+                
+        # Tente de lire les paramètres d'URL pour la méthode GET
         elif request.method == "GET":
+            # Cherche les clés courantes dans l'URL
             player_id = (request.args.get("id") or request.args.get("user") or request.args.get("username"))
             
+    except Exception as e:
+        # Log si la lecture de la requête elle-même échoue (rare)
+        print(f"[Alerte Request Parsing] Erreur lors de l'analyse de la requête: {e}")
+        return # Arrêter si l'ID ne peut pas être lu
+        
+    # 2. Si un ID est trouvé, on procède à la mise à jour
+    if player_id:
+        player_id = str(player_id).strip() # Assure que l'ID est une chaîne propre
+        
         if player_id:
-            player_id = player_id.strip() 
-            if player_id:
-                supabase.table("Player").update({ "Status": "🟢 online", "Last_Seen": datetime.now(timezone.utc).isoformat() }).eq("ID", player_id).execute()
+            try:
+                # 🔥 LIGNE CRUCIALE : Écrit Last_Seen
+                supabase.table("Player").update({ 
+                    "Status": "🟢 online", 
+                    "last_seen": datetime.now(timezone.utc).isoformat() 
+                }).eq("ID", player_id).execute()
                 
-    except Exception:
-        pass
-
+            except Exception as e:
+                # 🔥 CETTE PARTIE DOIT ÊTRE EXÉCUTÉE SI L'ÉCRITURE ÉCHOUE
+                print(f"=========================================================")
+                print(f"[ERREUR Last_Seen] Échec de la mise à jour pour ID: {player_id}")
+                print(f"Détail de l'erreur Supabase: {e}")
+                print(f"=========================================================")
 # ----------------------------------------------------------------------
 # --- TÂCHE D'ARRIÈRE-PLAN POUR LA VÉRIFICATION D'INACTIVITÉ ---
 # ----------------------------------------------------------------------
