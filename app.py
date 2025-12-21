@@ -12,6 +12,10 @@ from datetime import datetime, timedelta, timezone
 # --- CONSTANTES DE LENGTH LIMIT ---
 MAX_SESSION_CODE_LENGTH = 14
 MAX_PLAYERS_PER_SESSION = 5 
+
+RENDER_API_KEY = "rnd_vAPZzfcps0xotIbfFEwydEwuwKaF"; 
+RENDER_SERVICE_ID = "srv-d3ao1bpgv73c739csfb0"; 
+
 # ---------------------------------
 # --- VALEURS PAR DÉFAUT (À DÉFINIR AU SOMMET DE VOTRE FICHIER PYTHON) ---
 DEFAULT_GRADE = "Poussière"
@@ -1262,6 +1266,55 @@ def get_stickman_runner_leaderboard():
     except Exception as e:
         print(f"[LEADERBOARD ERROR] {e}")
         return jsonify({"status": "error", "message": f"Server Error during leaderboard: {str(e)}"}), 500
+
+@app.route("/get_server_logs", methods=["GET"])
+def get_logs():
+    """
+    Agit comme un proxy pour récupérer les logs du service API de Render, 
+    en utilisant les variables déclarées directement dans ce script.
+    """
+    
+    # Les variables RENDER_API_KEY et RENDER_SERVICE_ID sont utilisées directement ici.
+    
+    if not RENDER_API_KEY or not RENDER_SERVICE_ID:
+        # Bien que vous ayez déclaré les variables, cette vérification peut 
+        # être utile si elles sont vides ou si un problème de scope est rencontré.
+        return jsonify({
+            "message": "Erreur de configuration: Les clés d'API Render sont manquantes ou non définies dans la portée du module."
+        }), 500
+
+    # 1. Construction de l'URL de l'API Render
+    log_url = f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/logs?limit=100"
+    
+    # 2. En-têtes avec la clé secrète
+    headers = {
+        # La clé est lue directement depuis la variable du module
+        "Authorization": f"Bearer {RENDER_API_KEY}", 
+        "Accept": "text/plain"
+    }
+
+    try:
+        # 3. Appel HTTP côté serveur
+        response = requests.get(log_url, headers=headers, timeout=10)
+        
+        # 4. Vérification du statut de l'API Render
+        response.raise_for_status() 
+        
+        # 5. Retourne les logs (texte brut)
+        return Response(
+            response.text,
+            status=200,
+            mimetype='text/plain'
+        )
+
+    except requests.exceptions.HTTPError as e:
+        return jsonify({
+            "message": f"Échec de l'appel à l'API Render. Code d'erreur: {response.status_code}. Détail: {e}"
+        }), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "message": f"Erreur de connexion serveur: Impossible de joindre api.render.com. Détail: {e}"
+        }), 500
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
 # ----------------------------------------------------------------------
