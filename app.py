@@ -46,7 +46,10 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 # Initialisation du client Supabase
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Nom de vos tables de sauvegarde
+# Nom de vos tables de sauvegarde (CORRIGÉ pour correspondre EXACTEMENT au schéma)
+# J'ai conservé vos noms de variables, mais je les utilise maintenant
+# avec les noms exacts de votre schéma
+TABLE_NAME_Player = "Player" # Ajouté pour clarté
 TABLE_NAME_Skull_Arena = "Skull_Arena_DataBase"
 TABLE_NAME_ASTRO_DODGE = "Astro_Dodge"
 TABLE_NAME_STICKMAN_RUNNER = "Stickman_Runner"
@@ -87,8 +90,10 @@ def update_last_seen():
         
         if player_id:
             try:
-                # Écrit Last_Seen
-                supabase.table("Player").update({ 
+                # Écrit Status et last_seen dans la table Player.
+                # Noms de colonnes : "Status", "last_seen" (minuscules dans le schéma)
+                # Le nom de la colonne d'ID est "ID"
+                supabase.table(TABLE_NAME_Player).update({ 
                     "Status": "🟢 online", 
                     "last_seen": datetime.now(timezone.utc).isoformat() 
                 }).eq("ID", player_id).execute()
@@ -111,10 +116,11 @@ def check_player_activity():
             inactivity_limit_iso = inactivity_limit.isoformat()
 
             # Met tous les joueurs 'online' qui n'ont pas bougé depuis 15s à 'offline'
-            supabase.table("Player").update({
+            # Noms de colonnes : "last_seen", "Status" (conformes au schéma Player)
+            supabase.table(TABLE_NAME_Player).update({
                 "Status": "🔴 offline"
             }).lt(
-                "Last_Seen", inactivity_limit_iso
+                "last_seen", inactivity_limit_iso
             ).eq(
                 "Status", "🟢 online"
             ).execute()
@@ -142,14 +148,15 @@ def signup():
     if not username or not password:
         return jsonify({"status": "error", "message": "Champs manquants"}), 400
 
-    existing = supabase.table("Player").select("*").eq("ID", username).execute()
+    # Table Player, Colonne ID
+    existing = supabase.table(TABLE_NAME_Player).select("*").eq("ID", username).execute()
     if existing.data:
         return jsonify({"status": "error", "message": "Utilisateur déjà existant"}), 409
 
     hashed_pw = generate_password_hash(password)
     
-    # Insertion dans la table Player sans le champ 'personnel_upgrade'
-    supabase.table("Player").insert({
+    # Insertion dans la table Player. Colonnes : "ID", "Password", "Status"
+    supabase.table(TABLE_NAME_Player).insert({
         "ID": username, 
         "Password": hashed_pw, 
         "Status": "🔴 offline"
@@ -173,7 +180,8 @@ def login():
     if not username or not password:
         return jsonify({"status": "error", "message": "Champs manquants"}), 400
 
-    user = supabase.table("Player").select("Password").eq("ID", username).execute()
+    # Table Player. Colonne ID, Colonne Password
+    user = supabase.table(TABLE_NAME_Player).select("Password").eq("ID", username).execute()
     if not user.data:
         return jsonify({"status": "error", "message": "ID ou mot de passe incorrect"}), 401
 
@@ -197,12 +205,13 @@ def logout():
     if not username:
         return jsonify({"status": "error", "message": "ID manquant"}), 400
     try:
-        user = supabase.table("Player").select("*").eq("ID", username).execute()
+        # Table Player. Colonne ID
+        user = supabase.table(TABLE_NAME_Player).select("*").eq("ID", username).execute()
         if not user.data:
             return jsonify({"status": "error", "message": "Utilisateur introuvable"}), 404
 
-        # Met à jour le statut à offline
-        supabase.table("Player").update({"Status": "🔴 offline"}).eq("ID", username).execute()
+        # Met à jour le statut à offline. Colonnes : "Status", "ID"
+        supabase.table(TABLE_NAME_Player).update({"Status": "🔴 offline"}).eq("ID", username).execute()
         
         print(f"[LOGOUT] {username} déconnecté")
         response = jsonify({"status": "success", "message": f"{username} est offline"})
@@ -218,6 +227,7 @@ def logout():
 @app.route('/skull_arena_update_data', methods=['POST'])
 def skull_arena_update_data():
     """ [Skull_Arena_ServerSave] Met à jour les données du joueur (crânes, meilleure vague, niveaux d'amélioration).
+    Table : Skull_Arena_DataBase, Colonnes : username, "Best_Vague", "Crane", "UP_Degat", "UP_Portée", "UP_Vitesse", "UP_Cadence"
     """
     data = request.get_json(force=True)
     username = (data.get('username') or "").strip()
@@ -226,13 +236,13 @@ def skull_arena_update_data():
     try:
         new_best_vague = int(data.get('best_wave', 0))
         
-        # 1. Fetcher la meilleure vague actuelle pour ne pas l'écraser
+        # 1. Fetcher la meilleure vague actuelle pour ne pas l'écraser (COLONNE CORRIGÉE : "Best_Vague")
         current_data_query = supabase.table(TABLE_NAME_Skull_Arena).select('"Best_Vague"').eq('username', username).limit(1).execute()
         current_data = current_data_query.data[0] if current_data_query.data else None
         current_best_vague = current_data.get('Best_Vague', 0) if current_data else 0
         final_best_vague = max(current_best_vague, new_best_vague)
         
-        # 2. Préparer le payload
+        # 2. Préparer le payload (COLONNES CORRIGÉES : "Best_Vague", "Crane", "UP_Degat", "UP_Portée", "UP_Vitesse", "UP_Cadence")
         payload = {
             "username": username,
             "Best_Vague": final_best_vague,
@@ -242,7 +252,7 @@ def skull_arena_update_data():
             "UP_Vitesse": int(data.get('up_speed', 0)),
             "UP_Cadence": int(data.get('up_fire', 0))
         }
-        # 3. Effectuer l'UPSERT (Insert ou Update)
+        # 3. Effectuer l'UPSERT
         response = supabase.table(TABLE_NAME_Skull_Arena).upsert(payload, on_conflict="username").execute()
         if response.data:
             return jsonify({"status": "success", "message": "Sauvegarde Skull Arena réussie"}), 200
@@ -261,6 +271,7 @@ def skull_arena_get_data():
     if not username:
         return jsonify({"status": "error", "message": "Username manquant"}), 400
     try:
+        # COLONNES CORRIGÉES : Noms exacts de la table Skull_Arena_DataBase
         columns = '"Crane", "Best_Vague", "UP_Degat", "UP_Portée", "UP_Vitesse", "UP_Cadence"'
         response = supabase.table(TABLE_NAME_Skull_Arena).select(columns).eq('username', username).limit(1).execute()
         
@@ -272,6 +283,7 @@ def skull_arena_get_data():
             }), 200
         
         row = response.data[0]
+        # CLÉS DE RÉPONSE CORRIGÉES
         return jsonify({
             "status": "success", 
             "message": "Données Skull Arena chargées",
@@ -295,6 +307,7 @@ def skull_arena_get_leaderboard():
     """ Récupère les 10 meilleurs scores (Best_Vague) du classement global.
     """
     try:
+        # COLONNE CORRIGÉE : "Best_Vague"
         response = supabase.table(TABLE_NAME_Skull_Arena) \
             .select("username, Best_Vague") \
             .order("Best_Vague", desc=True) \
@@ -305,7 +318,7 @@ def skull_arena_get_leaderboard():
         for row in response.data:
             formatted_data.append({
                 "name": row.get('username'),
-                "wave": int(row.get('Best_Vague', 0))
+                "wave": int(row.get('Best_Vague', 0)) # CLÉ DE RÉPONSE CORRIGÉE
             })
 
         return jsonify({
@@ -324,7 +337,7 @@ def skull_arena_get_leaderboard():
 @app.route('/astro_dodge_update_data', methods=['POST'])
 def astro_dodge_update_data():
     """ [Astro_Dodge_ServerSave] Met à jour le meilleur score et le crédit du joueur.
-    (Assumes Supabase table 'Astro_Dodge' has columns: username, Best_Score, Credit)
+    Table : Astro_Dodge, Colonnes : username, "PR_Score", "Coins"
     """
     data = request.get_json(force=True)
     username = (data.get('username') or "").strip()
@@ -333,17 +346,18 @@ def astro_dodge_update_data():
     try:
         new_score = int(data.get('score', 0))
         
-        # 1. Fetcher le meilleur score actuel
-        current_data_query = supabase.table(TABLE_NAME_ASTRO_DODGE).select('"Best_Score"').eq('username', username).limit(1).execute()
+        # 1. Fetcher le meilleur score actuel (COLONNE CORRIGÉE : "PR_Score")
+        current_data_query = supabase.table(TABLE_NAME_ASTRO_DODGE).select('"PR_Score"').eq('username', username).limit(1).execute()
         current_data = current_data_query.data[0] if current_data_query.data else None
-        current_best_score = current_data.get('Best_Score', 0) if current_data else 0
+        # CLÉ DE RÉPONSE CORRIGÉE : "PR_Score"
+        current_best_score = current_data.get('PR_Score', 0) if current_data else 0
         final_best_score = max(current_best_score, new_score)
         
-        # 2. Préparer le payload
+        # 2. Préparer le payload (COLONNES CORRIGÉES : "PR_Score", "Coins")
         payload = {
             "username": username,
-            "Best_Score": final_best_score,
-            "Credit": int(data.get('credit', 0))
+            "PR_Score": final_best_score, # CORRIGÉ
+            "Coins": int(data.get('credit', 0)) # CORRIGÉ
         }
         
         # 3. Effectuer l'UPSERT
@@ -365,7 +379,8 @@ def astro_dodge_get_data():
     if not username:
         return jsonify({"status": "error", "message": "Username manquant"}), 400
     try:
-        columns = '"Best_Score", "Credit"'
+        # COLONNES CORRIGÉES : "PR_Score", "Coins"
+        columns = '"PR_Score", "Coins"'
         response = supabase.table(TABLE_NAME_ASTRO_DODGE).select(columns).eq('username', username).limit(1).execute()
         
         if not response.data:
@@ -376,12 +391,13 @@ def astro_dodge_get_data():
             }), 200
         
         row = response.data[0]
+        # CLÉS DE RÉPONSE CORRIGÉES
         return jsonify({
             "status": "success", 
             "message": "Données Astro Dodge chargées",
             "data": {
-                "score": int(row.get('Best_Score', 0)),
-                "credit": int(row.get('Credit', 0))
+                "score": int(row.get('PR_Score', 0)), # CORRIGÉ
+                "credit": int(row.get('Coins', 0)) # CORRIGÉ
             }
         }), 200
     except Exception as e:
@@ -390,12 +406,13 @@ def astro_dodge_get_data():
 
 @app.route('/astro_dodge_get_leaderboard', methods=['GET'])
 def astro_dodge_get_leaderboard():
-    """ Récupère les 10 meilleurs scores (Best_Score) du classement global.
+    """ Récupère les 10 meilleurs scores ("PR_Score") du classement global.
     """
     try:
+        # COLONNE CORRIGÉE : "PR_Score"
         response = supabase.table(TABLE_NAME_ASTRO_DODGE) \
-            .select("username, Best_Score") \
-            .order("Best_Score", desc=True) \
+            .select("username, PR_Score") \
+            .order("PR_Score", desc=True) \
             .limit(10) \
             .execute()
             
@@ -403,7 +420,7 @@ def astro_dodge_get_leaderboard():
         for row in response.data:
             formatted_data.append({
                 "name": row.get('username'),
-                "score": int(row.get('Best_Score', 0))
+                "score": int(row.get('PR_Score', 0)) # CLÉ DE RÉPONSE CORRIGÉE
             })
 
         return jsonify({
@@ -422,7 +439,7 @@ def astro_dodge_get_leaderboard():
 @app.route('/stickman_runner_update_data', methods=['POST'])
 def stickman_runner_update_data():
     """ [Stickman_Runner_ServerSave] Met à jour la meilleure distance et le crédit du joueur.
-    (Assumes Supabase table 'Stickman_Runner' has columns: username, Best_Distance, Credit)
+    Table : Stickman_Runner, Colonnes : username, best_score, credit
     """
     data = request.get_json(force=True)
     username = (data.get('username') or "").strip()
@@ -431,17 +448,17 @@ def stickman_runner_update_data():
     try:
         new_distance = int(data.get('distance', 0))
         
-        # 1. Fetcher la meilleure distance actuelle
-        current_data_query = supabase.table(TABLE_NAME_STICKMAN_RUNNER).select('"Best_Distance"').eq('username', username).limit(1).execute()
+        # 1. Fetcher la meilleure distance actuelle (COLONNE CORRIGÉE : best_score)
+        current_data_query = supabase.table(TABLE_NAME_STICKMAN_RUNNER).select('best_score').eq('username', username).limit(1).execute()
         current_data = current_data_query.data[0] if current_data_query.data else None
-        current_best_distance = current_data.get('Best_Distance', 0) if current_data else 0
+        current_best_distance = current_data.get('best_score', 0) if current_data else 0 # CORRIGÉ
         final_best_distance = max(current_best_distance, new_distance)
         
-        # 2. Préparer le payload
+        # 2. Préparer le payload (COLONNES CORRIGÉES : best_score, credit)
         payload = {
             "username": username,
-            "Best_Distance": final_best_distance,
-            "Credit": int(data.get('credit', 0))
+            "best_score": final_best_distance, # CORRIGÉ (Votre schéma a 'best_score', pas 'Best_Distance')
+            "credit": int(data.get('credit', 0)) # CORRIGÉ (Votre schéma a 'credit', pas 'Credit')
         }
         
         # 3. Effectuer l'UPSERT
@@ -463,7 +480,8 @@ def stickman_runner_get_data():
     if not username:
         return jsonify({"status": "error", "message": "Username manquant"}), 400
     try:
-        columns = '"Best_Distance", "Credit"'
+        # COLONNES CORRIGÉES : best_score, credit
+        columns = 'best_score, credit'
         response = supabase.table(TABLE_NAME_STICKMAN_RUNNER).select(columns).eq('username', username).limit(1).execute()
         
         if not response.data:
@@ -474,12 +492,13 @@ def stickman_runner_get_data():
             }), 200
         
         row = response.data[0]
+        # CLÉS DE RÉPONSE CORRIGÉES
         return jsonify({
             "status": "success", 
             "message": "Données Stickman Runner chargées",
             "data": {
-                "distance": int(row.get('Best_Distance', 0)),
-                "credit": int(row.get('Credit', 0))
+                "distance": int(row.get('best_score', 0)), # CORRIGÉ (votre schéma a 'best_score')
+                "credit": int(row.get('credit', 0)) # CORRIGÉ (votre schéma a 'credit')
             }
         }), 200
     except Exception as e:
@@ -488,12 +507,13 @@ def stickman_runner_get_data():
 
 @app.route('/stickman_runner_get_leaderboard', methods=['GET'])
 def stickman_runner_get_leaderboard():
-    """ Récupère les 10 meilleures distances (Best_Distance) du classement global.
+    """ Récupère les 10 meilleures distances (best_score) du classement global.
     """
     try:
+        # COLONNE CORRIGÉE : best_score
         response = supabase.table(TABLE_NAME_STICKMAN_RUNNER) \
-            .select("username, Best_Distance") \
-            .order("Best_Distance", desc=True) \
+            .select("username, best_score") \
+            .order("best_score", desc=True) \
             .limit(10) \
             .execute()
             
@@ -501,7 +521,7 @@ def stickman_runner_get_leaderboard():
         for row in response.data:
             formatted_data.append({
                 "name": row.get('username'),
-                "distance": int(row.get('Best_Distance', 0))
+                "distance": int(row.get('best_score', 0)) # CLÉ DE RÉPONSE CORRIGÉE
             })
 
         return jsonify({
