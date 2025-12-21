@@ -173,9 +173,6 @@ def rename_session_logic(player_id, old_code, new_code):
 # --- HOOK DE MISE À JOUR D'ACTIVITÉ (S'exécute avant chaque requête) ---
 # ----------------------------------------------------------------------
 @app.before_request
-from datetime import datetime, timezone # Assurez-vous que ces imports sont en haut du fichier
-
-@app.before_request
 def update_last_seen():
     """Met à jour le statut du joueur à 'online' et l'horodatage Last_Seen."""
     player_id = None
@@ -224,8 +221,6 @@ def update_last_seen():
 def check_player_activity():
     while True:
         # 1. Le thread se met en pause pendant 15 secondes
-        time.sleep(15) 
-        
         try:
 
             inactivity_limit = datetime.now(timezone.utc) - timedelta(seconds=15)
