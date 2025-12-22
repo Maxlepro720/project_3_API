@@ -224,7 +224,7 @@ def logout():
 #-------------------------------------------------
 @app.route('/stay_alive', methods=['GET'])
 def stay_alive():
-    pass
+    return jsonify({"status": "Server is alive", "message": "Keep-alive successful"}), 200
 # ------------------------------------------------
 # SKULL ARENA (ROUTES DE GESTION DE JEU)
 # ------------------------------------------------
