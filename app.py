@@ -107,25 +107,23 @@ def update_last_seen():
 # ----------------------------------------------------------------------
 # --- TÂCHE D'ARRIÈRE-PLAN POUR LA VÉRIFICATION D'INACTIVITÉ ---
 # ----------------------------------------------------------------------
+@app.before_request
 def check_player_activity():
-    while True:
-        try:
-            time.sleep(15)
+    try:
+        inactivity_limit = datetime.now(timezone.utc) - timedelta(seconds=15)
+        inactivity_limit_iso = inactivity_limit.isoformat()
 
-            inactivity_limit = datetime.now(timezone.utc) - timedelta(seconds=15)
-            inactivity_limit_iso = inactivity_limit.isoformat()
-
-            # Met tous les joueurs 'online' qui n'ont pas bougé depuis 15s à 'offline'
-            # Noms de colonnes : "last_seen", "Status" (conformes au schéma Player)
-            supabase.table(TABLE_NAME_Player).update({
-                "Status": "🔴 offline"
-            }).lt(
-                "last_seen", inactivity_limit_iso
-            ).eq(
-                "Status", "🟢 online"
-            ).execute()
-        except Exception as e:
-            print(f"Erreur inattendue dans le thread d'activité: {e}")
+        # Met tous les joueurs 'online' qui n'ont pas bougé depuis 15s à 'offline'
+        # Noms de colonnes : "last_seen", "Status" (conformes au schéma Player)
+        supabase.table(TABLE_NAME_Player).update({
+            "Status": "🔴 offline"
+        }).lt(
+            "last_seen", inactivity_limit_iso
+        ).eq(
+            "Status", "🟢 online"
+        ).execute()
+    except Exception as e:
+        print(f"Erreur inattendue dans le thread d'activité: {e}")
 # ----------------------------------------------------------------------
 # --- ROUTES FLASK ---
 # ----------------------------------------------------------------------
