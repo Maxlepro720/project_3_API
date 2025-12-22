@@ -219,6 +219,12 @@ def logout():
         print(f"[LOGOUT ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+#-------------------------------------------------
+#  Route stay alive(laisse server eveiller)
+#-------------------------------------------------
+@app.route('/stay_alive', methods=['GET'])
+def stay_alive():
+    pass
 # ------------------------------------------------
 # SKULL ARENA (ROUTES DE GESTION DE JEU)
 # ------------------------------------------------
