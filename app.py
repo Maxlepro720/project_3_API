@@ -225,6 +225,42 @@ def logout():
 @app.route('/stay_alive', methods=['GET'])
 def stay_alive():
     return jsonify({"status": "Server is alive", "message": "Keep-alive successful"}), 200
+
+#     gestion amitié ----------------------------------------------
+
+@app.route('/friends_control', methods=['POST'])
+def friends_control():
+    data = request.get_json(force=True)
+    action_to_do = (data.get('action') or "").strip()
+    username = (data.get('username') or "").strip()
+    personne = (data.get('personne') or "").strip()
+    if not action_to_do:
+        return jsonify({"status": "error", "message": "action manquant"}), 400
+    if not username:
+        return jsonify({"status": "error", "message": "Nom d'utilisateur manquant"}), 400
+    if not personne:
+        return jsonify({"status": "error", "message": "cible manquante"}), 400
+    try:
+        if action_to_do == 'get_friends_list':
+            response = supabase.table('Player') \
+                .select('friends') \
+                .eq('ID', username) \
+                .execute()
+
+            result = response.data
+            friends_list = []
+            if result and len(result) > 0:
+                friends_list = result[0].get('friends', [])
+                
+            return jsonify({"status": "success", "friends": friends_list }), 200
+            
+    
+    except Exception as e:
+        print(f"erreur dans route friends_control {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+        
+
+
 # ------------------------------------------------
 # SKULL ARENA (ROUTES DE GESTION DE JEU)
 # ------------------------------------------------
