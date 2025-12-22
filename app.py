@@ -238,8 +238,6 @@ def friends_control():
         return jsonify({"status": "error", "message": "action manquant"}), 400
     if not username:
         return jsonify({"status": "error", "message": "Nom d'utilisateur manquant"}), 400
-    if not personne:
-        return jsonify({"status": "error", "message": "cible manquante"}), 400
     try:
         if action_to_do == 'get_friends_list':
             response = supabase.table('Player') \
