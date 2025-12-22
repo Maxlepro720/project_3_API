@@ -442,8 +442,8 @@ def astro_dodge_get_leaderboard():
 # ------------------------------------------------
 @app.route('/stickman_runner_update_data', methods=['POST'])
 def stickman_runner_update_data():
-    """ [Stickman_Runner_ServerSave] Met à jour la meilleure distance et le crédit du joueur.
-    Table : Stickman_Runner, Colonnes : username, best_score, credit
+    """ [Stickman_Runner_ServerSave] Met à jour la meilleure distance, le crédit et le grade du joueur.
+    Table : Stickman_Runner, Colonnes : username, best_score, credit, grade
     """
     data = request.get_json(force=True)
     username = (data.get('username') or "").strip()
@@ -451,33 +451,38 @@ def stickman_runner_update_data():
     if not username:
         return jsonify({"status": "error", "message": "Username manquant"}), 400
     try:
-        new_distance = int(data.get('distance', 0))
+        # CORRECTION 1 : Le client envoie 'best_score', pas 'distance'.
+        new_distance = int(data.get('best_score', 0)) 
+        new_credit = int(data.get('credit', 0))
+        # CORRECTION 2 : Récupérer le grade envoyé par le client (string)
+        new_grade = (data.get('grade') or "").strip()
 
-        # 1. Fetcher la meilleure distance actuelle (COLONNE CORRIGÉE : best_score)
+        # 1. Fetcher la meilleure distance actuelle
         current_data_query = supabase.table(TABLE_NAME_STICKMAN_RUNNER).select('best_score').eq('username', username).limit(1).execute()
         current_data = current_data_query.data[0] if current_data_query.data else None
-        current_best_distance = current_data.get('best_score', 0) if current_data else 0 # CORRIGÉ
+        current_best_distance = current_data.get('best_score', 0) if current_data else 0
         final_best_distance = max(current_best_distance, new_distance)
 
-        # 2. Préparer le payload (COLONNES CORRIGÉES : best_score, credit)
+        # 2. Préparer le payload (Ajout de 'grade')
         payload = {
             "username": username,
-            "best_score": final_best_distance, # CORRIGÉ (Votre schéma a 'best_score', pas 'Best_Distance')
-            "credit": int(data.get('credit', 0)) # CORRIGÉ (Votre schéma a 'credit', pas 'Credit')
+            "best_score": final_best_distance,
+            "credit": new_credit, 
+            "grade": new_grade # NOUVEAU : Sauvegarde du grade
         }
+        
         # 3. Effectuer l'UPSERT
         response = supabase.table(TABLE_NAME_STICKMAN_RUNNER).upsert(payload, on_conflict="username").execute()
         
         if response.data:
             return jsonify({"status": "success", "message": "Sauvegarde Stickman Runner réussie"}), 200
-            
         else:
             return jsonify({"status": "error", "message": "Échec de l'UPSERT Stickman Runner"}), 500
             
     except Exception as e:
         print(f"[SAVE STICKMAN RUNNER ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
+        
 @app.route('/stickman_runner_get_data', methods=['POST'])
 def stickman_runner_get_data():
     """ [Stickman_Runner_ServerLoad] Récupère les données d'un joueur.
@@ -507,7 +512,7 @@ def stickman_runner_get_data():
             "data": {
                 "distance": int(row.get('best_score', 0)), # CORRIGÉ (votre schéma a 'best_score')
                 "credit": int(row.get('credit', 0)), # CORRIGÉ (votre schéma a 'credit')
-                "grade": int(row.get('grade',0))
+                "grade": row.get('grade','')
             }
         }), 200
 
