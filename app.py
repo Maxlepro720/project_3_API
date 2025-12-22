@@ -485,7 +485,7 @@ def stickman_runner_get_data():
         return jsonify({"status": "error", "message": "Username manquant"}), 400
     try:
         # COLONNES CORRIGÉES : best_score, credit
-        columns = 'best_score, credit'
+        columns = 'best_score, credit, grade'
         response = supabase.table(TABLE_NAME_STICKMAN_RUNNER).select(columns).eq('username', username).limit(1).execute()
         
         if not response.data:
@@ -502,7 +502,8 @@ def stickman_runner_get_data():
             "message": "Données Stickman Runner chargées",
             "data": {
                 "distance": int(row.get('best_score', 0)), # CORRIGÉ (votre schéma a 'best_score')
-                "credit": int(row.get('credit', 0)) # CORRIGÉ (votre schéma a 'credit')
+                "credit": int(row.get('credit', 0)), # CORRIGÉ (votre schéma a 'credit')
+                "grade": int(row.get('grade',0))
             }
         }), 200
     except Exception as e:
