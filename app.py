@@ -513,12 +513,12 @@ def stickman_runner_get_data():
 
 @app.route('/stickman_runner_get_leaderboard', methods=['GET'])
 def stickman_runner_get_leaderboard():
-    """ Récupère les 10 meilleures distances (best_score) du classement global.
+    """ Récupère les 10 meilleures distances (best_score) et le grade du classement global.
     """
     try:
-        # COLONNE CORRIGÉE : best_score
+        # COLONNE CORRIGÉE : best_score, et AJOUT de 'grade'
         response = supabase.table(TABLE_NAME_STICKMAN_RUNNER) \
-            .select("username, best_score") \
+            .select("username, best_score, grade") \
             .order("best_score", desc=True) \
             .limit(10) \
             .execute()
@@ -527,7 +527,8 @@ def stickman_runner_get_leaderboard():
         for row in response.data:
             formatted_data.append({
                 "name": row.get('username'),
-                "distance": int(row.get('best_score', 0)) # CLÉ DE RÉPONSE CORRIGÉE
+                "distance": int(row.get('best_score', 0)), # CLÉ DE RÉPONSE CORRIGÉE
+                "grade": row.get('grade') # AJOUT DE LA COLONNE 'grade'
             })
 
         return jsonify({
