@@ -479,7 +479,6 @@ def stickman_runner_update_data():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/stickman_runner_get_data', methods=['POST'])
-
 def stickman_runner_get_data():
     """ [Stickman_Runner_ServerLoad] Récupère les données d'un joueur.
     """
