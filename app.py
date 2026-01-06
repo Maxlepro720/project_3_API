@@ -58,6 +58,7 @@ TABLE_NAME_ASTRO_DODGE = "Astro_Dodge"
 TABLE_NAME_STICKMAN_RUNNER = "Stickman_Runner"
 TABLE_NAME_CHESS = "chess"
 
+INITIAL_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 # ----------------------------------------------------------------------
 # --- UTILITIES ---
 # ----------------------------------------------------------------------
