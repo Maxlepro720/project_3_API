@@ -596,11 +596,16 @@ def stickman_runner_get_leaderboard():
 #----------------------------------
 #--------------chess game----------
 #----------------------------------
+# 1. Matchmaking : Trouve ou crée une partie
 @app.route("/find_or_create_match", methods=["POST"])
 def find_or_create_match():
-    player_id = request.cookies.get("username") 
+    # --- CORRECTION DE L'AUTHENTIFICATION ---
+    data = request.get_json(silent=True) or {}
+    player_id = (data.get("username") or "").strip() 
+    # ----------------------------------------
+
     if not player_id:
-        return jsonify({"error": "Utilisateur non identifié. Connexion requise."}), 401
+        return jsonify({"error": "Pseudo manquant dans la requête. Connexion requise."}), 401
 
     try:
         # 1. Chercher une partie en attente (où black_player_id est NULL)
@@ -617,11 +622,12 @@ def find_or_create_match():
             game_uuid = game_data['uuid']
             white_id = game_data['white_player_id']
             
+            # Mise à jour de la partie
             supabase.table(TABLE_NAME_CHESS) \
                 .update({"black_player_id": player_id, "joueurs": f"{white_id},{player_id}"}) \
                 .eq("uuid", game_uuid) \
                 .execute()
-            
+                
             return jsonify({
                 "status": "joined",
                 "game_uuid": game_uuid,
@@ -654,7 +660,6 @@ def find_or_create_match():
             })
 
     except PostgrestAPIError as e:
-        # Gestion d'erreur propre pour éviter les crashes Gunicorn
         print(f"Erreur Supabase lors du matchmaking: {e}")
         return jsonify({"error": f"Erreur Supabase: {e.message}"}), 500
     except Exception as e:
@@ -662,13 +667,16 @@ def find_or_create_match():
         return jsonify({"error": "Erreur interne du serveur."}), 500
 
 
-# --- ROUTE 2 : Envoyer Coup (Make Move) ---
+# 2. Envoyer Coup (Make Move)
 @app.route("/make_move", methods=["POST"])
 def make_move():
-    data = request.get_json(silent=True)
+    data = request.get_json(silent=True) or {}
     game_uuid = data.get("game_uuid")
     move_uci = data.get("move_uci") # Format UCI: 'e2e4', 'a7a8q', etc.
-    player_id = request.cookies.get("username")
+    
+    # --- CORRECTION DE L'AUTHENTIFICATION ---
+    player_id = (data.get("username") or "").strip() 
+    # ----------------------------------------
 
     if not all([game_uuid, move_uci, player_id]):
         return jsonify({"error": "Données de mouvement ou identifiant de joueur manquant."}), 400
@@ -691,7 +699,7 @@ def make_move():
         # Vérifier si c'est le tour du joueur
         expected_player = game_data['white_player_id'] if board.turn == chess.WHITE else game_data['black_player_id']
         if expected_player != player_id:
-             return jsonify({"error": "Ce n'est pas votre tour de jouer."}), 403
+            return jsonify({"error": "Ce n'est pas votre tour de jouer."}), 403
 
         # 3. Valider et effectuer le mouvement
         try:
@@ -734,7 +742,8 @@ def make_move():
         return jsonify({"error": "Erreur interne du serveur."}), 500
 
 
-# --- ROUTE 3 : Demander Coups de la Partie (Historique) ---
+# 3. Demander Coups de la Partie (Historique)
+# NOTE : Cette route est un GET, elle n'avait pas besoin de correction d'authentification par cookies.
 @app.route("/get_moves/<game_uuid>", methods=["GET"])
 def get_moves(game_uuid):
     """
@@ -756,7 +765,7 @@ def get_moves(game_uuid):
 
     except PostgrestAPIError as e:
         if "0 rows" in str(e):
-             return jsonify({"error": "Partie non trouvée."}), 404
+            return jsonify({"error": "Partie non trouvée."}), 404
         print(f"Erreur Supabase lors de la récupération des coups: {e}")
         return jsonify({"error": f"Erreur Supabase: {e.message}"}), 500
     except Exception as e:
@@ -764,12 +773,15 @@ def get_moves(game_uuid):
         return jsonify({"error": "Erreur interne du serveur."}), 500
 
 
-# --- ROUTE 4 : Destruction de la Partie ---
+# 4. Destruction de la Partie
 @app.route("/destroy_match", methods=["POST"])
 def destroy_match():
-    data = request.get_json(silent=True)
-    game_uuid = data.get("game_uuid") if data else None
-    player_id = request.cookies.get("username")
+    data = request.get_json(silent=True) or {}
+    game_uuid = data.get("game_uuid")
+    
+    # --- CORRECTION DE L'AUTHENTIFICATION ---
+    player_id = (data.get("username") or "").strip()
+    # ----------------------------------------
     
     if not player_id:
         return jsonify({"error": "Utilisateur non identifié."}), 401
