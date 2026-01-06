@@ -7,6 +7,9 @@ import time
 from datetime import datetime, timedelta, timezone
 from flask_cors import CORS
 from decimal import Decimal # Conservé, peut être utile si des décimaux sont nécessaires plus tard
+import uuid
+from supabase import PostgrestAPIError
+import chess
 
 # ---------------------------------
 # --- VALEURS PAR DÉFAUT (À DÉFINIR AU SOMMET DE VOTRE FICHIER PYTHON) ---
@@ -53,6 +56,7 @@ TABLE_NAME_Player = "Player" # Ajouté pour clarté
 TABLE_NAME_Skull_Arena = "Skull_Arena_DataBase"
 TABLE_NAME_ASTRO_DODGE = "Astro_Dodge"
 TABLE_NAME_STICKMAN_RUNNER = "Stickman_Runner"
+TABLE_NAME_CHESS = "chess"
 
 # ----------------------------------------------------------------------
 # --- UTILITIES ---
@@ -589,6 +593,259 @@ def stickman_runner_get_leaderboard():
     except Exception as e:
         print(f"[LEADERBOARD STICKMAN RUNNER ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+#--------------chess game----------
+# --- ROUTE 1 : Matchmaking (Rejoindre ou Créer) ---
+@app.route("/find_or_create_match", methods=["POST"])
+def find_or_create_match():
+    player_id = request.cookies.get("username") # Remplacer si l'ID est dans le JSON
+    if not player_id:
+        return jsonify({"error": "Utilisateur non identifié. Connexion requise."}), 401
+
+    try:
+        # 1. Chercher une partie en attente (black_player_id est NULL et n'est pas soi-même)
+        open_games = supabase.table(TABLE_NAME_CHESS) \
+            .select("uuid, fen_state, white_player_id") \
+            .is_("black_player_id", "null") \
+            .neq("white_player_id", player_id) \
+            .limit(1) \
+            .execute()
+
+        if open_games.data:
+            # 2. Partie trouvée : Rejoindre en tant que Noir
+            game_data = open_games.data[0]
+            game_uuid = game_data['uuid']
+            white_id = game_data['white_player_id']
+            
+            # Mise à jour pour ajouter le joueur noir et la colonne 'joueurs'
+            supabase.table(TABLE_NAME_CHESS) \
+                .update({"black_player_id": player_id, "joueurs": f"{white_id},{player_id}"}) \
+                .eq("uuid", game_uuid) \
+                .execute()
+            
+            return jsonify({
+                "status": "joined",
+                "game_uuid": game_uuid,
+                "player_color": "black",
+                "fen": game_data['fen_state'],
+                "opponent_id": white_id
+            })
+
+        else:
+            # 3. Aucune partie ouverte : Créer une nouvelle partie en tant que Blanc
+            new_game_uuid = str(uuid.uuid4())
+            
+            new_game = {
+                "uuid": new_game_uuid,
+                "fen_state": INITIAL_FEN,
+                "white_player_id": player_id,
+                "black_player_id": None, 
+                "joueurs": player_id, 
+                "moves_list": [] 
+            }
+            
+            supabase.table(TABLE_NAME_CHESS).insert(new_game).execute()
+            
+            return jsonify({
+                "status": "created",
+                "game_uuid": new_game_uuid,
+                "player_color": "white",
+                "fen": INITIAL_FEN,
+                "opponent_id": None
+            })
+
+    except PostgrestAPIError as e:
+        print(f"Erreur Supabase lors du matchmaking: {e}")
+        return jsonify({"error": "Erreur serveur lors de la recherche de partie."}), 500
+    except Exception as e:
+        print(f"Erreur inattendue lors du matchmaking: {e}")
+        return jsonify({"error": "Erreur interne du serveur."}), 500
+
+# --- ROUTE 2 : Demander Joueurs et FEN ---
+@app.route("/get_match_info/<game_uuid>", methods=["GET"])
+def get_match_info(game_uuid):
+    """Récupère les joueurs et l'état FEN actuel d'une partie."""
+    try:
+        result = supabase.table(TABLE_NAME_CHESS) \
+            .select("fen_state, white_player_id, black_player_id") \
+            .eq("uuid", game_uuid) \
+            .single() \
+            .execute()
+            
+        return jsonify({
+            "game_uuid": game_uuid,
+            "fen": result.data['fen_state'],
+            "white_player": result.data['white_player_id'],
+            "black_player": result.data['black_player_id']
+        })
+
+    except PostgrestAPIError as e:
+        if "0 rows" in str(e):
+             return jsonify({"error": "Partie non trouvée."}), 404
+        print(f"Erreur Supabase lors de la récupération des infos: {e}")
+        return jsonify({"error": "Erreur serveur."}), 500
+    except Exception as e:
+        print(f"Erreur inattendue: {e}")
+        return jsonify({"error": "Erreur interne du serveur."}), 500
+
+# --- ROUTE 3 : Envoyer Coup (Make Move) ---
+@app.route("/make_move", methods=["POST"])
+def make_move():
+    """
+    Traite un mouvement de jeu :
+    1. Récupère le FEN et l'historique de Supabase.
+    2. Valide le coup avec 'python-chess'.
+    3. Met à jour le FEN et la liste des coups.
+    4. Sauvegarde le nouvel état dans Supabase.
+    """
+    data = request.get_json(silent=True)
+    game_uuid = data.get("game_uuid")
+    move_uci = data.get("move_uci") # Format UCI: 'e2e4', 'a7a8q', etc.
+    player_id = request.cookies.get("username")
+
+    if not all([game_uuid, move_uci, player_id]):
+        return jsonify({"error": "Données de mouvement ou identifiant de joueur manquant."}), 400
+
+    try:
+        # 1. Récupérer l'état actuel de la partie
+        result = supabase.table(TABLE_NAME_CHESS) \
+            .select("fen_state, white_player_id, black_player_id, moves_list") \
+            .eq("uuid", game_uuid) \
+            .single() \
+            .execute()
+            
+        game_data = result.data
+        current_fen = game_data['fen_state']
+        moves_list = game_data['moves_list'] or []
+
+        # 2. Créer l'objet plateau 'python-chess'
+        board = chess.Board(current_fen)
+        
+        # Vérifier si c'est le tour du joueur
+        expected_player = game_data['white_player_id'] if board.turn == chess.WHITE else game_data['black_player_id']
+        if expected_player != player_id:
+             return jsonify({"error": "Ce n'est pas votre tour de jouer."}), 403
+
+        # 3. Valider le coup
+        try:
+            move = chess.Move.from_uci(move_uci)
+        except ValueError:
+            return jsonify({"error": f"Coup UCI invalide: {move_uci}"}), 400
+
+        if move not in board.legal_moves:
+            return jsonify({"error": "Coup illégal."}), 400
+
+        # 4. Effectuer le mouvement
+        board.push(move)
+        new_fen = board.fen()
+        moves_list.append(move_uci)
+        
+        # 5. Mettre à jour la base de données
+        update_data = {
+            "fen_state": new_fen,
+            "moves_list": moves_list
+        }
+        
+        supabase.table(TABLE_NAME_CHESS).update(update_data).eq("uuid", game_uuid).execute()
+        
+        # 6. Vérifier l'état de fin de partie (échec et mat, pat)
+        game_status = "active"
+        if board.is_checkmate():
+            game_status = "checkmate"
+        elif board.is_stalemate() or board.is_fivefold_repetition() or board.is_insufficient_material() or board.is_seventyfive_moves():
+            game_status = "draw"
+
+        return jsonify({
+            "success": True, 
+            "new_fen": new_fen,
+            "game_status": game_status
+        }), 200
+
+    except PostgrestAPIError as e:
+        print(f"Erreur Supabase lors de la gestion du coup: {e}")
+        return jsonify({"error": "Erreur serveur lors de la mise à jour du coup."}), 500
+    except Exception as e:
+        print(f"Erreur inattendue lors du coup: {e}")
+        return jsonify({"error": "Erreur interne du serveur."}), 500
+
+# --- ROUTE 4 : Demander Coups de la Partie (Historique) ---
+@app.route("/get_moves/<game_uuid>", methods=["GET"])
+def get_moves(game_uuid):
+    """
+    Récupère la liste complète des coups joués pour une partie donnée.
+    Utilise la colonne 'moves_list' (JSONB/Text).
+    """
+    try:
+        result = supabase.table(TABLE_NAME_CHESS) \
+            .select("moves_list") \
+            .eq("uuid", game_uuid) \
+            .single() \
+            .execute()
+            
+        # moves_list est une liste Python si Supabase l'a gérée comme JSONB
+        moves = result.data.get("moves_list", [])
+
+        return jsonify({
+            "game_uuid": game_uuid,
+            "moves": moves
+        })
+
+    except PostgrestAPIError as e:
+        if "0 rows" in str(e):
+             return jsonify({"error": "Partie non trouvée."}), 404
+        print(f"Erreur Supabase lors de la récupération des coups: {e}")
+        return jsonify({"error": "Erreur serveur lors de la récupération des coups."}), 500
+    except Exception as e:
+        print(f"Erreur inattendue lors de la récupération des coups: {e}")
+        return jsonify({"error": "Erreur interne du serveur."}), 500
+
+# --- ROUTE 5 : Destruction de la Partie ---
+@app.route("/destroy_match", methods=["POST"])
+def destroy_match():
+    """
+    Supprime la ligne de la partie si l'utilisateur est bien un des joueurs.
+    """
+    data = request.get_json(silent=True)
+    game_uuid = data.get("game_uuid") if data else None
+    player_id = request.cookies.get("username")
+    
+    if not player_id:
+        return jsonify({"error": "Utilisateur non identifié."}), 401
+    if not game_uuid:
+        return jsonify({"error": "UUID de partie manquant."}), 400
+
+    try:
+        # 1. Vérification des droits
+        result = supabase.table(TABLE_NAME_CHESS) \
+            .select("uuid") \
+            .eq("uuid", game_uuid) \
+            .or_(f"white_player_id.eq.{player_id}", f"black_player_id.eq.{player_id}") \
+            .limit(1) \
+            .execute()
+            
+        if not result.data:
+            return jsonify({"error": "Partie non trouvée ou non autorisé à la supprimer."}), 403
+
+        # 2. Suppression de la partie
+        supabase.table(TABLE_NAME_CHESS) \
+            .delete() \
+            .eq("uuid", game_uuid) \
+            .execute()
+        
+        print(f"Partie {game_uuid} détruite par {player_id}.")
+
+        return jsonify({"success": True, "message": f"Partie {game_uuid} supprimée."}), 200
+
+    except PostgrestAPIError as e:
+        print(f"Erreur Supabase lors de la destruction de partie: {e}")
+        return jsonify({"error": "Erreur serveur lors de la suppression."}), 500
+    except Exception as e:
+        print(f"Erreur inattendue lors de la destruction: {e}")
+        return jsonify({"error": "Erreur interne du serveur."}), 500
+        
+#-----------------------------------
+#------------------gestion admin----
+#-----------------------------------
+
 
 @app.route('/get_all_players_status', methods=['GET', 'OPTIONS'])
 def get_all_players_status():
