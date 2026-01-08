@@ -795,7 +795,7 @@ def destroy_match():
         result = supabase.table(TABLE_NAME_CHESS) \
             .select("uuid") \
             .eq("uuid", game_uuid) \
-            .or_(f'white_player_id.eq."{player_id}"', f'black_player_id.eq."{player_id}"') \
+            .or_(f'white_player_id.eq."{player_id}",black_player_id.eq."{player_id}"') \
             .limit(1) \
             .execute()
             
