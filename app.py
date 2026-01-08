@@ -894,9 +894,10 @@ def give_up_chess():
         
         # 2. Vérifier si la partie est déjà terminée
         if game.get('abandon'):
-            # BUG: UTILISE UN OPÉRATEUR TERNAIRE INVALIDE EN PYTHON
-            return jsonify({"status": "error", "message": f"La partie est déjà terminée par abandon du joueur {game.get('abandon') == 'white' ? game['black_player_id'] : game['white_player_id']}."}), 409
-        
+            # CORRECTION DE LA SYNTAXE PYTHON DANS LA F-STRING
+            winner_id = game['black_player_id'] if game.get('abandon') == 'white' else game['white_player_id']
+            return jsonify({"status": "error", "message": f"La partie est déjà terminée par abandon du joueur {winner_id}."}), 409
+
         white_player = game['white_player_id']
         black_player = game['black_player_id']
         
@@ -973,7 +974,6 @@ def get_give_up_chess():
     except Exception as e:
         print(f"[GET GIVE UP ERROR] General error: {e}")
         return jsonify({"status": "error", "message": f"Erreur interne du serveur: {str(e)}"}), 500
-
 #-----------------------------------
 #------------------gestion admin----
 #-----------------------------------
