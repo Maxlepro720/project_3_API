@@ -869,6 +869,110 @@ def get_game_state():
         print(f"[GET GAME STATE ERROR] General error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/give_up_chess', methods=['POST'])
+def give_up_chess():
+    """
+    Permet à un joueur d'abandonner une partie.
+    Met à jour la colonne 'abandon' avec la couleur du joueur gagnant.
+    """
+    try:
+        data = request.get_json()
+        game_uuid = data.get('game_uuid')
+        username = data.get('username')
+
+        if not game_uuid or not username:
+            return jsonify({"status": "error", "message": "game_uuid et username sont requis."}), 400
+
+        # 1. Récupérer les données de la partie
+        # On vérifie aussi si la partie n'a pas déjà un statut d'abandon
+        game_data_response = supabase.table('chess').select('white_player_id, black_player_id, abandon').eq('uuid', game_uuid).single().execute()
+
+        if not game_data_response.data:
+            return jsonify({"status": "error", "message": "Partie non trouvée."}), 404
+            
+        game = game_data_response.data
+        
+        # 2. Vérifier si la partie est déjà terminée
+        if game.get('abandon'):
+            return jsonify({"status": "error", "message": f"La partie est déjà terminée par abandon du joueur {game.get('abandon') == 'white' ? game['black_player_id'] : game['white_player_id']}."}), 409
+
+        white_player = game['white_player_id']
+        black_player = game['black_player_id']
+        
+        # 3. Déterminer la couleur du joueur qui abandonne et du gagnant
+        if username == white_player:
+            winner_color = 'black'
+            loser_id = white_player
+        elif username == black_player:
+            winner_color = 'white'
+            loser_id = black_player
+        else:
+            return jsonify({"status": "error", "message": "L'utilisateur n'est pas un joueur de cette partie."}), 403
+
+        # 4. Mettre à jour la colonne 'abandon' avec la couleur du gagnant
+        update_data = {
+            'abandon': winner_color,
+        }
+
+        update_response = supabase.table('chess').update(update_data).eq('uuid', game_uuid).execute()
+
+        if update_response.data:
+            return jsonify({
+                "status": "success", 
+                "message": f"{loser_id} a abandonné. Le joueur {winner_color} gagne par abandon.",
+                "abandon_status": winner_color,
+                "winner_color": winner_color,
+            }), 200
+        else:
+            return jsonify({"status": "error", "message": "Erreur lors de la mise à jour de la base de données. Partie non trouvée ou non modifiée."}), 409
+
+    except PostgrestAPIError as e:
+        print(f"[GIVE UP ERROR] Supabase error: {e}")
+        return jsonify({"status": "error", "message": f"Erreur de base de données: {e.message}"}), 500
+    except Exception as e:
+        print(f"[GIVE UP ERROR] General error: {e}")
+        return jsonify({"status": "error", "message": f"Erreur interne du serveur: {str(e)}"}), 500
+
+@app.route('/get_give_up_chess', methods=['GET'])
+def get_give_up_chess():
+    """
+    Vérifie si un abandon a eu lieu pour une partie donnée.
+    """
+    try:
+        game_uuid = request.args.get('game_uuid')
+
+        if not game_uuid:
+            return jsonify({"status": "error", "message": "game_uuid est requis."}), 400
+
+        # Récupérer la valeur de la colonne 'abandon'
+        game_data_response = supabase.table('chess').select('abandon').eq('uuid', game_uuid).single().execute()
+
+        if not game_data_response.data:
+            return jsonify({"status": "error", "message": "Partie non trouvée."}), 404
+            
+        abandon_status = game_data_response.data.get('abandon')
+
+        if abandon_status:
+            # Si 'abandon' contient une couleur (white ou black), l'abandon a eu lieu.
+            return jsonify({
+                "status": "abandoned", 
+                "winner_color": abandon_status,
+                "message": f"La partie est terminée. Le joueur {abandon_status} gagne par abandon."
+            }), 200
+        else:
+            # La colonne est NULL, pas d'abandon.
+            return jsonify({
+                "status": "active", 
+                "message": "La partie est toujours en cours. Aucun abandon détecté."
+            }), 200
+
+    except PostgrestAPIError as e:
+        print(f"[GET GIVE UP ERROR] Supabase error: {e}")
+        return jsonify({"status": "error", "message": f"Erreur de base de données: {e.message}"}), 500
+    except Exception as e:
+        print(f"[GET GIVE UP ERROR] General error: {e}")
+        return jsonify({"status": "error", "message": f"Erreur interne du serveur: {str(e)}"}), 500
+
 #-----------------------------------
 #------------------gestion admin----
 #-----------------------------------
