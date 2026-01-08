@@ -894,8 +894,9 @@ def give_up_chess():
         
         # 2. Vérifier si la partie est déjà terminée
         if game.get('abandon'):
-            return jsonify({"status": "error", "message": f"La partie est déjà terminée par abandon du joueur {game.get('abandon') == 'white' ? game['black_player_id'] : game['white_player_id']}."}), 409
-
+            # BUG: UTILISE UN OPÉRATEUR TERNAIRE INVALIDE EN PYTHON
+            return jsonify({"status": "error", "message": f"La partie est déjà terminée par abandon du joueur {game.get('abandon') == 'white' ? game['black_player_id'] : game['white_player_id']}."}), 409
+        
         white_player = game['white_player_id']
         black_player = game['black_player_id']
         
