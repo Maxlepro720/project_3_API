@@ -26,7 +26,7 @@ CORS(app, origins=["https://clickerbutmultiplayer.xo.je"])
 # ------------------------------------
 @app.after_request
 def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = 'https://clickerbutmultiplayer.xo.je'
+    response.headers['Access-Control-Allow-Origin'] = 'https://projet2fdp.xo.je'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response
@@ -34,7 +34,7 @@ def add_cors_headers(response):
 @app.route('/<path:path>', methods=['OPTIONS'])
 def options_handler(path):
     response = jsonify({'status': 'OK'})
-    response.headers['Access-Control-Allow-Origin'] = 'https://clickerbutmultiplayer.xo.je'
+    response.headers['Access-Control-Allow-Origin'] = 'https://projet2fdp.xo.je'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response, 200
