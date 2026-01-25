@@ -1075,6 +1075,40 @@ def get_play_counter():
         print(f"[ERROR Get_Play_Counter] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/add1to_count', methods=['GET'])
+def add1to_count():
+    """
+    Incrémente le compteur d'un jeu de +1.
+    Usage : /add1to_count?name=Skull Arena
+    """
+    game_name = request.args.get('name')
+    
+    if not game_name:
+        return jsonify({"status": "error", "message": "Le paramètre 'name' est requis."}), 400
+
+    try:
+        # 1. On récupère la valeur actuelle du compteur pour ce jeu
+        response = supabase.table("Play_Count").select("counter").eq("name", game_name).execute()
+
+        if response.data and len(response.data) > 0:
+            current_count = response.data[0]['counter'] or 0
+            new_count = current_count + 1
+
+            # 2. On met à jour avec la nouvelle valeur
+            supabase.table("Play_Count").update({"counter": new_count}).eq("name", game_name).execute()
+
+            return jsonify({
+                "status": "success",
+                "game": game_name,
+                "new_counter": new_count
+            }), 200
+        else:
+            return jsonify({"status": "error", "message": f"Jeu '{game_name}' non trouvé dans la table."}), 404
+
+    except Exception as e:
+        print(f"[ERROR add1to_count] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
