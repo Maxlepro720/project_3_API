@@ -1044,6 +1044,37 @@ def get_all_players_status():
         response.headers.add("Access-Control-Allow-Origin", "https://clickerbutmultiplayer.xo.je")
         return response, 500
 
+#recuperer le counter du nombre de chaque jeux
+
+@app.route('/get_play_counter', methods=['GET'])
+def get_play_counter():
+    """
+    Récupère le nom et le nombre de parties pour chaque jeu.
+    Table : Play_Count, Colonnes : name, counter
+    """
+    try:
+        # Récupération des données depuis Supabase
+        # On sélectionne uniquement les colonnes nécessaires : 'name' et 'counter'
+        response = supabase.table("Play_Count").select("name, counter").execute()
+
+        if not response.data:
+            return jsonify({
+                "status": "success", 
+                "message": "Aucune donnée trouvée.", 
+                "data": []
+            }), 200
+
+        # Renvoie les données au format JSON
+        # Format : [{"name": "jeu1", "counter": 10}, {"name": "jeu2", "counter": 50}]
+        return jsonify({
+            "status": "success",
+            "data": response.data
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR Get_Play_Counter] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
