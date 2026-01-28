@@ -1237,6 +1237,62 @@ def remove_sanction():
         print(f"[REMOVE SANCTION ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/get_all_ban', methods=['GET'])
+def get_all_ban():
+    """
+    Récupère la liste de tous les joueurs ayant une sanction active[cite: 106].
+    """
+    try:
+        # On filtre les joueurs dont la colonne Sanction n'est pas vide (is not null)
+        response = supabase.table(TABLE_NAME_Player) \
+            .select("ID, Sanction") \
+            .not_.is_("Sanction", "null") \
+            .execute() [cite: 108]
+
+        return jsonify({
+            "status": "success",
+            "count": len(response.data),
+            "data": response.data
+        }), 200
+
+    except Exception as e:
+        print(f"[GET ALL BAN ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/get_ban', methods=['GET'])
+def get_ban():
+    """
+    Vérifie si un joueur spécifique est banni via son ID[cite: 5].
+    """
+    player_id = request.args.get('id') [cite: 5]
+    
+    if not player_id:
+        return jsonify({"status": "error", "message": "Le paramètre 'id' est requis."}), 400
+
+    try:
+        # On cherche le joueur par son ID [cite: 8, 12]
+        response = supabase.table(TABLE_NAME_Player) \
+            .select("ID, Sanction") \
+            .eq("ID", player_id) \
+            .single() \
+            .execute() [cite: 15, 88]
+
+        if not response.data:
+            return jsonify({"status": "error", "message": "Joueur non trouvé."}), 404
+
+        sanction = response.data.get("Sanction")
+        is_banned = (sanction == "ban")
+
+        return jsonify({
+            "status": "success",
+            "player_id": player_id,
+            "is_banned": is_banned,
+            "sanction_detail": sanction
+        }), 200
+
+    except Exception as e:
+        print(f"[GET BAN ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
