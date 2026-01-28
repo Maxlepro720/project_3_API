@@ -1109,6 +1109,87 @@ def add1to_count():
         print(f"[ERROR add1to_count] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# -------------- gestion des version -------------------
+
+@app.route('/get_latest_version', methods=['GET'])
+def get_latest_version():
+    """Récupère la dernière mise à jour (version, title, description)"""
+    try:
+        # On trie par Version descendante et on limite à 1 pour avoir la plus récente
+        response = supabase.table("Last_Maj") \
+            .select("Version, Title, Description") \
+            .order("Version", desc=True) \
+            .limit(1) \
+            .execute()
+
+        if response.data:
+            return jsonify({
+                "status": "success",
+                "data": response.data[0]
+            }), 200
+        else:
+            return jsonify({"status": "error", "message": "Aucune mise à jour trouvée"}), 404
+            
+    except Exception as e:
+        print(f"[ERROR get_latest_version] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/add_version', methods=['GET'])
+def add_version():
+    """Crée une nouvelle ligne dans Last_Maj via des paramètres GET"""
+    version = request.args.get('version')
+    title = request.args.get('title')
+    description = request.args.get('description')
+
+    if not version:
+        return jsonify({"status": "error", "message": "Le paramètre 'version' est obligatoire"}), 400
+
+    try:
+        payload = {
+            "Version": int(version),
+            "Title": title,
+            "Description": description
+        }
+        
+        # Insertion dans la table Supabase [cite: 186, 243]
+        response = supabase.table("Last_Maj").insert(payload).execute()
+        
+        return jsonify({
+            "status": "success", 
+            "message": "Nouvelle version ajoutée",
+            "data": response.data
+        }), 201
+
+    except Exception as e:
+        print(f"[ERROR add_version] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/get_all_versions', methods=['GET'])
+def get_all_versions():
+    """Récupère toutes les lignes de la table Last_Maj, triées par version."""
+    try:
+        # On sélectionne toutes les colonnes et on trie par Version (la plus récente en premier)
+        # On utilise le nom exact de la table "Last_Maj" tel que défini dans votre schéma [cite: 116]
+        response = supabase.table("Last_Maj").select("*").order("Version", desc=True).execute()
+
+        if not response.data:
+            return jsonify({
+                "status": "success", 
+                "message": "Aucune mise à jour enregistrée.", 
+                "data": []
+            }), 200
+
+        # Renvoie les données au format JSON, similaire à la gestion des compteurs [cite: 118]
+        return jsonify({
+            "status": "success",
+            "data": response.data
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR get_all_versions] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
