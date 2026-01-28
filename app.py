@@ -1247,7 +1247,7 @@ def get_all_ban():
         response = supabase.table(TABLE_NAME_Player) \
             .select("ID, Sanction") \
             .not_.is_("Sanction", "null") \
-            .execute() [cite: 108]
+            .execute()
 
         return jsonify({
             "status": "success",
@@ -1264,7 +1264,7 @@ def get_ban():
     """
     Vérifie si un joueur spécifique est banni via son ID[cite: 5].
     """
-    player_id = request.args.get('id') [cite: 5]
+    player_id = request.args.get('id') 
     
     if not player_id:
         return jsonify({"status": "error", "message": "Le paramètre 'id' est requis."}), 400
