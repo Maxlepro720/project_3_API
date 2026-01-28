@@ -75,6 +75,15 @@ def build_cors_preflight_response():
 @app.before_request
 def update_last_seen():
     """Met à jour le statut du joueur à 'online' et l'horodatage Last_Seen."""
+
+    admin_routes = ['/get_all_players_status', '/get_all_ban', '/do_ban', '/remove_sanction', '/get_ban']
+        
+    if request.path in admin_routes:
+        return
+
+    if request.args.get('admin') == 'true':
+        return
+        
     player_id = None
     
     try:
@@ -115,6 +124,7 @@ def update_last_seen():
 @app.before_request
 def check_player_activity():
     try:
+        
         inactivity_limit = datetime.now(timezone.utc) - timedelta(seconds=15)
         inactivity_limit_iso = inactivity_limit.isoformat()
 
