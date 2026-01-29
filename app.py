@@ -1285,7 +1285,7 @@ def get_ban():
             .select("ID, Sanction") \
             .eq("ID", player_id) \
             .single() \
-            .execute() [cite: 15, 88]
+            .execute()
 
         if not response.data:
             return jsonify({"status": "error", "message": "Joueur non trouvé."}), 404
