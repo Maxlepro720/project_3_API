@@ -1393,14 +1393,14 @@ def get_time_FDPrice():
 
         response = supabase.table("FDPiece") \
             .select("Time, FDPiece") \
-            .eq("id", username) \
+            .eq("username", username) \
             .limit(1) \
             .execute()
 
         # Si le joueur n'existe pas → création
         if not response.data:
             init_payload = {
-                "id": username,
+                "username": username,
                 "Time": 0,
                 "FDPiece": 0
             }
@@ -1439,12 +1439,12 @@ def send_time():
             return jsonify({"status": "error", "message": "Username manquant"}), 400
 
         payload = {
-            "id": username,
+            "username": username,
             "Time": time_value
         }
 
         supabase.table("FDPiece") \
-            .upsert(payload, on_conflict="id") \
+            .upsert(payload, on_conflict="username") \
             .execute()
 
         return jsonify({"status": "success", "message": "Time sauvegardé"}), 200
@@ -1467,12 +1467,12 @@ def send_FDPrice():
             return jsonify({"status": "error", "message": "Username manquant"}), 400
 
         payload = {
-            "id": username,
+            "username": username,
             "FDPiece": fd_piece
         }
 
         supabase.table("FDPiece") \
-            .upsert(payload, on_conflict="id") \
+            .upsert(payload, on_conflict="username") \
             .execute()
 
         return jsonify({"status": "success", "message": "FDPiece sauvegardé"}), 200
