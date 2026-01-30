@@ -984,6 +984,79 @@ def get_give_up_chess():
     except Exception as e:
         print(f"[GET GIVE UP ERROR] General error: {e}")
         return jsonify({"status": "error", "message": f"Erreur interne du serveur: {str(e)}"}), 500
+        
+#------------------------------------------ Jeu de Casino -------------------------------
+
+
+@app.route('/Casino_update_data', methods=['POST'])
+def stickman_runner_update_data():
+    
+    data = request.get_json(force=True)
+    username = (data.get('username') or "").strip()
+
+    if not username:
+        return jsonify({"status": "error", "message": "Username manquant"}), 400
+    try:
+        new_money = int(data.get('money', 0))
+        success = data.get('success', {})
+
+        payload = {
+            "username": username,
+            "money": new_money,
+            "success": success 
+        }
+        
+        # 3. Effectuer l'UPSERT
+        response = supabase.table("Casino").upsert(payload, on_conflict="username").execute()
+        
+        if response.data:
+            return jsonify({"status": "success", "message": "Sauvegarde Casino réussie"}), 200
+        else:
+            return jsonify({"status": "error", "message": "Échec de l'UPSERT Casino"}), 500
+            
+    except Exception as e:
+        print(f"[SAVE STICKMAN RUNNER ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+        
+@app.route('/Casino_get_data', methods=['POST'])
+def stickman_runner_get_data():
+    
+    data = request.get_json(force=True)
+    username = (data.get('username') or "").strip()
+
+    if not username:
+        return jsonify({"status": "error", "message": "Username manquant"}), 400
+    try:
+    
+        columns = 'money, success'
+        response = supabase.table("Casino").select(columns).eq('username', username).limit(1).execute()
+
+        if not response.data:
+            return jsonify({
+                "status": "not_found", 
+                "message": "Données Casino introuvables. Initialisation...",
+                "data": {"money": 0, "success": {} }
+            }), 200
+
+        row = response.data[0]
+
+        return jsonify({
+            "status": "success", 
+            "message": "Données Casino chargées",
+            "data": {
+                "money": int(row.get('money', 0)),
+                "success": row.get('success', {} )
+            }
+        }), 200
+
+    except Exception as e:
+        print(f"[LOAD Casino ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
+
+
 #-----------------------------------
 #------------------gestion admin----
 #-----------------------------------
