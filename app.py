@@ -989,7 +989,7 @@ def get_give_up_chess():
 
 
 @app.route('/Casino_update_data', methods=['POST'])
-def stickman_runner_update_data():
+def casino_update_data():
     
     data = request.get_json(force=True)
     username = (data.get('username') or "").strip()
@@ -1019,7 +1019,7 @@ def stickman_runner_update_data():
         return jsonify({"status": "error", "message": str(e)}), 500
         
 @app.route('/Casino_get_data', methods=['POST'])
-def stickman_runner_get_data():
+def casino_get_data():
     
     data = request.get_json(force=True)
     username = (data.get('username') or "").strip()
