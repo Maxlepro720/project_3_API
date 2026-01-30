@@ -1484,6 +1484,60 @@ def send_FDPrice():
         print(f"[SEND FDPrice ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# ==========================
+# GET Evo Pass
+# ==========================
+@app.route('/get_evo_pass', methods=['POST'])
+def get_evo_pass():
+    data = request.get_json(force=True)
+    username = (data.get('username') or "").strip()
+
+    if not username:
+        return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+    try:
+        response = supabase.table("users").select("Pass").eq("username", username).single().execute()
+        if not response.data:
+            return jsonify({"status": "not_found", "message": "Utilisateur introuvable"}), 404
+
+        pass_value = response.data.get("Pass", 0)
+        return jsonify({"status": "success", "Pass": pass_value}), 200
+
+    except Exception as e:
+        print(f"[GET EVO PASS ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ==========================
+# SET Evo Pass
+# ==========================
+@app.route('/set_evo_pass', methods=['POST'])
+def set_evo_pass():
+    data = request.get_json(force=True)
+    username = (data.get('username') or "").strip()
+    new_pass_value = data.get("Pass")
+
+    if not username or new_pass_value is None:
+        return jsonify({"status": "error", "message": "Paramètres manquants"}), 400
+
+    try:
+        # Vérifie que l'utilisateur existe
+        user_check = supabase.table("users").select("Pass").eq("username", username).single().execute()
+        if not user_check.data:
+            return jsonify({"status": "not_found", "message": "Utilisateur introuvable"}), 404
+
+        # Met à jour la colonne Pass
+        update_response = supabase.table("users").update({"Pass": int(new_pass_value)}).eq("username", username).execute()
+        if update_response.data:
+            return jsonify({"status": "success", "message": f"Pass mis à jour à {new_pass_value}"}), 200
+        else:
+            return jsonify({"status": "error", "message": "Échec de la mise à jour"}), 500
+
+    except Exception as e:
+        print(f"[SET EVO PASS ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 
 
 # ----------------------------------------------------------------------
