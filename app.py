@@ -1496,7 +1496,7 @@ def get_evo_pass():
         return jsonify({"status": "error", "message": "Username manquant"}), 400
 
     try:
-        response = supabase.table("users").select("Pass").eq("username", username).single().execute()
+        response = supabase.table("FDPiece").select("Pass").eq("username", username).single().execute()
         if not response.data:
             return jsonify({"status": "not_found", "message": "Utilisateur introuvable"}), 404
 
@@ -1522,12 +1522,12 @@ def set_evo_pass():
 
     try:
         # Vérifie que l'utilisateur existe
-        user_check = supabase.table("users").select("Pass").eq("username", username).single().execute()
+        user_check = supabase.table("FDPiece").select("Pass").eq("username", username).single().execute()
         if not user_check.data:
             return jsonify({"status": "not_found", "message": "Utilisateur introuvable"}), 404
 
         # Met à jour la colonne Pass
-        update_response = supabase.table("users").update({"Pass": int(new_pass_value)}).eq("username", username).execute()
+        update_response = supabase.table("FDPiece").update({"Pass": int(new_pass_value)}).eq("username", username).execute()
         if update_response.data:
             return jsonify({"status": "success", "message": f"Pass mis à jour à {new_pass_value}"}), 200
         else:
