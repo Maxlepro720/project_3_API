@@ -1377,6 +1377,115 @@ def get_ban():
         print(f"[GET BAN ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+
+#----------------gestion de time et des FDPiece --------------------
+
+
+@app.route('/get_time_FDPrice', methods=['POST'])
+def get_time_FDPrice():
+    try:
+        data = request.get_json(force=True)
+        username = (data.get('username') or "").strip()
+
+        if not username:
+            return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+        response = supabase.table("FDPiece") \
+            .select("Time, FDPiece") \
+            .eq("id", username) \
+            .limit(1) \
+            .execute()
+
+        # Si le joueur n'existe pas → création
+        if not response.data:
+            init_payload = {
+                "id": username,
+                "Time": 0,
+                "FDPiece": 0
+            }
+            supabase.table("FDPiece").insert(init_payload).execute()
+
+            return jsonify({
+                "status": "created",
+                "Time": 0,
+                "FDPiece": 0
+            }), 200
+
+        row = response.data[0]
+
+        return jsonify({
+            "status": "success",
+            "Time": int(row.get("Time", 0)),
+            "FDPiece": int(row.get("FDPiece", 0))
+        }), 200
+
+    except PostgrestAPIError as e:
+        print(f"[GET FDPiece ERROR] {e}")
+        return jsonify({"status": "error", "message": e.message}), 500
+    except Exception as e:
+        print(f"[GET FDPiece ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/send_time', methods=['POST'])
+def send_time():
+    try:
+        data = request.get_json(force=True)
+        username = (data.get('username') or "").strip()
+        time_value = int(data.get('Time', 0))
+
+        if not username:
+            return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+        payload = {
+            "id": username,
+            "Time": time_value
+        }
+
+        supabase.table("FDPiece") \
+            .upsert(payload, on_conflict="id") \
+            .execute()
+
+        return jsonify({"status": "success", "message": "Time sauvegardé"}), 200
+
+    except PostgrestAPIError as e:
+        print(f"[SEND TIME ERROR] {e}")
+        return jsonify({"status": "error", "message": e.message}), 500
+    except Exception as e:
+        print(f"[SEND TIME ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/send_FDPrice', methods=['POST'])
+def send_FDPrice():
+    try:
+        data = request.get_json(force=True)
+        username = (data.get('username') or "").strip()
+        fd_piece = int(data.get('FDPiece', 0))
+
+        if not username:
+            return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+        payload = {
+            "id": username,
+            "FDPiece": fd_piece
+        }
+
+        supabase.table("FDPiece") \
+            .upsert(payload, on_conflict="id") \
+            .execute()
+
+        return jsonify({"status": "success", "message": "FDPiece sauvegardé"}), 200
+
+    except PostgrestAPIError as e:
+        print(f"[SEND FDPrice ERROR] {e}")
+        return jsonify({"status": "error", "message": e.message}), 500
+    except Exception as e:
+        print(f"[SEND FDPrice ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
 # ----------------------------------------------------------------------
