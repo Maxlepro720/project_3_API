@@ -1461,21 +1461,30 @@ def send_FDPrice():
     try:
         data = request.get_json(force=True)
         username = (data.get('username') or "").strip()
-        fd_piece = int(data.get('FDPiece', 0))
+        fd_change = int(data.get('FDPiece', 0))  # peut être positif ou négatif
 
         if not username:
             return jsonify({"status": "error", "message": "Username manquant"}), 400
 
+        # Récupérer la valeur actuelle
+        response = supabase.table("FDPiece").select("FDPiece").eq("username", username).single().execute()
+        current_fd = 0
+        if response.data and "FDPiece" in response.data:
+            current_fd = int(response.data["FDPiece"])
+
+        # Calculer la nouvelle valeur
+        new_fd = current_fd + fd_change
+        if new_fd < 0:  # éviter d’avoir un nombre négatif
+            new_fd = 0
+
+        # Mettre à jour dans la table
         payload = {
             "username": username,
-            "FDPiece": fd_piece
+            "FDPiece": new_fd
         }
+        supabase.table("FDPiece").upsert(payload, on_conflict="username").execute()
 
-        supabase.table("FDPiece") \
-            .upsert(payload, on_conflict="username") \
-            .execute()
-
-        return jsonify({"status": "success", "message": "FDPiece sauvegardé"}), 200
+        return jsonify({"status": "success", "FDPiece": new_fd, "message": "FDPiece mis à jour"}), 200
 
     except PostgrestAPIError as e:
         print(f"[SEND FDPrice ERROR] {e}")
@@ -1483,6 +1492,7 @@ def send_FDPrice():
     except Exception as e:
         print(f"[SEND FDPrice ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ==========================
 # GET Evo Pass
