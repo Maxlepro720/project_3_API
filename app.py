@@ -1568,7 +1568,8 @@ def set_sub():
 
         current_fd = int(response.data.get("FDPiece", 0))
 
-        if current_fd < price:
+        # 🔒 vérification argent suffisant (uniquement si un prix est demandé)
+        if price > 0 and current_fd < price:
             return jsonify({"status": "error", "message": "FDPiece insuffisant"}), 403
 
         new_fd = current_fd - price
@@ -1591,6 +1592,7 @@ def set_sub():
     except Exception as e:
         print(f"[SET SUB ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route('/get_sub', methods=['POST'])
 def get_sub():
