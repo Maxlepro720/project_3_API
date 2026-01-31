@@ -1517,10 +1517,6 @@ def get_evo_pass():
         print(f"[GET EVO PASS ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
-# ==========================
-# SET Evo Pass
-# ==========================
 @app.route('/set_evo_pass', methods=['POST'])
 def set_evo_pass():
     data = request.get_json(force=True)
@@ -1547,7 +1543,83 @@ def set_evo_pass():
         print(f"[SET EVO PASS ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# ------------ gestion abonnement (basique, medium ou premium) -----------
 
+@app.route('/set_sub', methods=['POST'])
+def set_sub():
+    try:
+        data = request.get_json(force=True)
+        username = (data.get('username') or "").strip()
+        sub_level = (data.get('sub') or "").strip().lower()
+        price = int(data.get('price', 0))
+
+        if not username or sub_level not in ["basique", "medium", "premium"]:
+            return jsonify({"status": "error", "message": "Paramètres invalides"}), 400
+
+        # Récupérer FDPiece actuel
+        response = supabase.table("FDPiece") \
+            .select("FDPiece") \
+            .eq("username", username) \
+            .single() \
+            .execute()
+
+        if not response.data:
+            return jsonify({"status": "not_found", "message": "Utilisateur introuvable"}), 404
+
+        current_fd = int(response.data.get("FDPiece", 0))
+
+        if current_fd < price:
+            return jsonify({"status": "error", "message": "FDPiece insuffisant"}), 403
+
+        new_fd = current_fd - price
+
+        # Mise à jour FDPiece + Abonnement
+        supabase.table("FDPiece") \
+            .update({
+                "FDPiece": new_fd,
+                "Abonnement": sub_level
+            }) \
+            .eq("username", username) \
+            .execute()
+
+        return jsonify({
+            "status": "success",
+            "Abonnement": sub_level,
+            "FDPiece": new_fd
+        }), 200
+
+    except Exception as e:
+        print(f"[SET SUB ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/get_sub', methods=['POST'])
+def get_sub():
+    try:
+        data = request.get_json(force=True)
+        username = (data.get('username') or "").strip()
+
+        if not username:
+            return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+        response = supabase.table("FDPiece") \
+            .select("Abonnement") \
+            .eq("username", username) \
+            .single() \
+            .execute()
+
+        if not response.data:
+            return jsonify({"status": "not_found", "message": "Utilisateur introuvable"}), 404
+
+        abonnement = response.data.get("Abonnement")
+
+        return jsonify({
+            "status": "success",
+            "Abonnement": abonnement
+        }), 200
+
+    except Exception as e:
+        print(f"[GET SUB ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # ----------------------------------------------------------------------
