@@ -1624,6 +1624,35 @@ def get_sub():
         print(f"[GET SUB ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+#----------------pub / retour postback --------------------
+
+@app.route('/postback_mylead', methods=['POST', 'GET'])
+def postback_mylead():
+    # Récupère les paramètres envoyés par MyLead
+    goal_id = request.values.get("goal_id")            # identifiant du joueur / campagne
+    virtual_amount = request.values.get("virtual_amount")  # nombre de pièces à créditer
+
+    if not goal_id or not virtual_amount:
+        return "Missing parameters", 400
+
+    try:
+        montant = int(virtual_amount)
+
+        # Exemple : on suppose que goal_id correspond au username
+        player = supabase.table('FDPiece').select("FDPiece").eq("username", goal_id).execute()
+
+        current_credits = player.data[0]["FDPiece"] if player.data else 0
+
+        # Ajoute le montant au joueur
+        supabase.table('FDPiece').update({
+            "FDPiece": current_credits + montant
+        }).eq("username", goal_id).execute()
+
+        return "OK"
+    except Exception as e:
+        print(f"[Postback Error] {e}")
+        return "Error processing postback", 500
+
 
 # ----------------------------------------------------------------------
 # --- DÉMARRAGE DU SERVEUR ---
