@@ -19,22 +19,23 @@ DEFAULT_CREDIT = 0
 
 app = Flask(__name__)
 # J'ai conservé l'origine CORS spécifique de votre code initial
-CORS(app, origins=["https://clickerbutmultiplayer.xo.je"])
+CORS(app, origins=["*"])
 
 # ------------------------------------
 # 🔥 CORS FIX GLOBAL POUR TOUTES ROUTES
 # ------------------------------------
 @app.after_request
 def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = 'https://projet2fdp.xo.je'
+    response.headers['Access-Control-Allow-Origin'] = '*'  # toutes origines
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response
 
+
 @app.route('/<path:path>', methods=['OPTIONS'])
 def options_handler(path):
     response = jsonify({'status': 'OK'})
-    response.headers['Access-Control-Allow-Origin'] = 'https://projet2fdp.xo.je'
+    response.headers['Access-Control-Allow-Origin'] = '*'  # toutes origines
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response, 200
