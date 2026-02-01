@@ -1473,10 +1473,12 @@ def send_FDPrice():
         if response.data and "FDPiece" in response.data:
             current_fd = int(response.data["FDPiece"])
 
+        # Vérifier si l'utilisateur a assez de FDPriece pour un achat
+        if fd_change < 0 and current_fd < abs(fd_change):
+            return jsonify({"status": "error", "message": "FDPiece insuffisant"}), 400
+
         # Calculer la nouvelle valeur
         new_fd = current_fd + fd_change
-        if new_fd < 0:  # éviter d’avoir un nombre négatif
-            new_fd = 0
 
         # Mettre à jour dans la table
         payload = {
