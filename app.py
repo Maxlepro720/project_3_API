@@ -1643,7 +1643,7 @@ def stripe_webhook():
         
         # Stripe range les variables personnalisées dans 'metadata'
         # On extrait goal_id et virtual_amount
-        goal_id = session.get('metadata', {}).get('goal_id')
+        goal_id = session.get('metadata', {}).get('client_reference_id')
         virtual_amount = session.get('metadata', {}).get('virtual_amount')
 
         if not goal_id or not virtual_amount:
@@ -1653,12 +1653,12 @@ def stripe_webhook():
             montant = int(virtual_amount)
 
             # --- Votre logique Supabase inchangée ---
-            player = supabase.table('FDPiece').select("FDPiece").eq("username", goal_id).execute()
+            player = supabase.table('FDPiece').select("FDPiece").eq("username", client_reference_id).execute()
             current_credits = player.data[0]["FDPiece"] if player.data else 0
 
             supabase.table('FDPiece').update({
                 "FDPiece": current_credits + montant
-            }).eq("username", goal_id).execute()
+            }).eq("username", client_reference_id).execute()
             # ---------------------------------------
 
             return "OK", 200
