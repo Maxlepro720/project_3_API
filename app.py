@@ -1628,32 +1628,45 @@ def get_sub():
 
 #----------------pub / retour postback --------------------
 
-@app.route('/postback_mylead', methods=['POST', 'GET'])
-def postback_mylead():
-    # Récupère les paramètres envoyés par MyLead
-    goal_id = request.values.get("goal_id")            # identifiant du joueur / campagne
-    virtual_amount = request.values.get("virtual_amount")  # nombre de pièces à créditer
+@app.route('/stripe_webhook', methods=['POST'])
+def stripe_webhook():
+    # Stripe envoie des données en JSON
+    payload = request.get_json()
+    
+    # Vérification sommaire de la structure de l'événement
+    if not payload or 'type' not in payload:
+        return "Invalid payload", 400
 
-    if not goal_id or not virtual_amount:
-        return "Missing parameters", 400
+    # On cible l'événement de paiement réussi
+    if payload['type'] == 'checkout.session.completed':
+        session = payload['data']['object']
+        
+        # Stripe range les variables personnalisées dans 'metadata'
+        # On extrait goal_id et virtual_amount
+        goal_id = session.get('metadata', {}).get('goal_id')
+        virtual_amount = session.get('metadata', {}).get('virtual_amount')
 
-    try:
-        montant = int(virtual_amount)
+        if not goal_id or not virtual_amount:
+            return "Missing metadata", 400
 
-        # Exemple : on suppose que goal_id correspond au username
-        player = supabase.table('FDPiece').select("FDPiece").eq("username", goal_id).execute()
+        try:
+            montant = int(virtual_amount)
 
-        current_credits = player.data[0]["FDPiece"] if player.data else 0
+            # --- Votre logique Supabase inchangée ---
+            player = supabase.table('FDPiece').select("FDPiece").eq("username", goal_id).execute()
+            current_credits = player.data[0]["FDPiece"] if player.data else 0
 
-        # Ajoute le montant au joueur
-        supabase.table('FDPiece').update({
-            "FDPiece": current_credits + montant
-        }).eq("username", goal_id).execute()
+            supabase.table('FDPiece').update({
+                "FDPiece": current_credits + montant
+            }).eq("username", goal_id).execute()
+            # ---------------------------------------
 
-        return "OK"
-    except Exception as e:
-        print(f"[Postback Error] {e}")
-        return "Error processing postback", 500
+            return "OK", 200
+        except Exception as e:
+            print(f"[Stripe Error] {e}")
+            return "Error processing payment", 500
+
+    return "Unhandled event type", 200
 
 
 # ----------------------------------------------------------------------
