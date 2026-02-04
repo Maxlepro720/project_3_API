@@ -1377,8 +1377,74 @@ def get_ban():
     except Exception as e:
         print(f"[GET BAN ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+#-------------------------------------- CCCCCAAAAAAASSSSSSIIIIINNNNOOOOOOOO -----------------------
 
 
+@app.route('/get_casino_data', methods=['GET'])
+def get_player_data():
+    username = request.args.get('username')
+    
+    if not username:
+        return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+    try:
+        response = supabase.table("Casino") \
+            .select("money, success") \
+            .eq("username", username) \
+            .single() \
+            .execute()
+
+        if response.data:
+            return jsonify({
+                "status": "success",
+                "data": response.data
+            }), 200
+        else:
+            return jsonify({"status": "error", "message": "Joueur non trouvé"}), 404
+            
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/update_casino_money', methods=['POST'])
+def update_money():
+    data = request.get_json(force=True)
+    username = data.get('username')
+    new_money = data.get('money')
+
+    if username is None or new_money is None:
+        return jsonify({"status": "error", "message": "Données incomplètes"}), 400
+
+    try:
+        response = supabase.table("Casino") \
+            .update({"money": new_money}) \
+            .eq("username", username) \
+            .execute()
+
+        return jsonify({"status": "success", "message": "Argent mis à jour"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/update_casino_success', methods=['POST'])
+def update_success():
+    data = request.get_json(force=True)
+    username = data.get('username')
+    new_success = data.get('success') # Doit être un dictionnaire Python/JSON
+
+    if username is None or new_success is None:
+        return jsonify({"status": "error", "message": "Données incomplètes"}), 400
+
+    try:
+        # Supabase gère la conversion dict -> jsonb automatiquement
+        response = supabase.table("Casino") \
+            .update({"success": new_success}) \
+            .eq("username", username) \
+            .execute()
+
+        return jsonify({"status": "success", "message": "Succès mis à jour"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 #----------------gestion de time et des FDPiece --------------------
 
