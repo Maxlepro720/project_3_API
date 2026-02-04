@@ -1381,7 +1381,7 @@ def get_ban():
 
 
 @app.route('/get_casino_data', methods=['GET'])
-def get_player_data():
+def get_casino_data():
     username = request.args.get('username')
     
     if not username:
@@ -1407,7 +1407,7 @@ def get_player_data():
 
 
 @app.route('/update_casino_money', methods=['POST'])
-def update_money():
+def update_casino_money():
     data = request.get_json(force=True)
     username = data.get('username')
     new_money = data.get('money')
@@ -1427,7 +1427,7 @@ def update_money():
 
 
 @app.route('/update_casino_success', methods=['POST'])
-def update_success():
+def update_casino_success():
     data = request.get_json(force=True)
     username = data.get('username')
     new_success = data.get('success') # Doit être un dictionnaire Python/JSON
