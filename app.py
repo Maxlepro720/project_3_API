@@ -1391,17 +1391,32 @@ def get_casino_data():
         response = supabase.table("Casino") \
             .select("money, success") \
             .eq("username", username) \
-            .single() \
             .execute()
 
-        if response.data:
+        # Si l'utilisateur n'existe pas, on le crée
+        if not response.data:
+            new_data = {
+                "username": username,
+                "money": 0,
+                "success": {}
+            }
+
+            supabase.table("Casino").insert(new_data).execute()
+
             return jsonify({
                 "status": "success",
-                "data": response.data
+                "data": {
+                    "money": 0,
+                    "success": {}
+                }
             }), 200
-        else:
-            return jsonify({"status": "error", "message": "Joueur non trouvé"}), 404
-            
+
+        # Si l'utilisateur existe
+        return jsonify({
+            "status": "success",
+            "data": response.data[0]
+        }), 200
+
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
