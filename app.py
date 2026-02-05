@@ -1398,7 +1398,7 @@ def get_casino_data():
             new_data = {
                 "username": username,
                 "money": 0,
-                "success": {}
+                "success": []
             }
 
             supabase.table("Casino").insert(new_data).execute()
@@ -1407,7 +1407,7 @@ def get_casino_data():
                 "status": "success",
                 "data": {
                     "money": 0,
-                    "success": {}
+                    "success": []
                 }
             }), 200
 
