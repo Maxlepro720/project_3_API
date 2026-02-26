@@ -1054,6 +1054,72 @@ def casino_get_data():
         print(f"[LOAD Casino ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+from datetime import datetime, timezone
+
+@app.route('/get_HL_money', methods=['POST'])
+def get_HL_money():
+    data = request.get_json(force=True)
+    username = (data.get('username') or "").strip()
+
+    if not username:
+        return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+    try:
+        # 1. Récupérer les données (save, gain_HL, last_claim)
+        response = supabase.table("Gun_Merge")\
+            .select("save, gain_HL, last_claim")\
+            .eq("username", username)\
+            .execute()
+
+        if not response.data:
+            return jsonify({"status": "error", "message": "Joueur non trouvé"}), 404
+
+        row = response.data[0]
+        save_json = row.get("save", {})
+        gain_hl_timestamp = row.get("gain_HL")
+        
+        # Vérification du last_claim (on suppose que tu l'as passé en type int/numeric dans Supabase)
+        # Si c'est encore un timestamp, on vérifie s'il est null ou non.
+        if row.get("last_claim") == 1:
+            return jsonify({"status": "success", "gain": 0, "message": "Déjà réclamé"}), 200
+
+        # 2. Calcul du gain par seconde basé sur l'inventaire actuel
+        # Note : On définit les valeurs de gain ici pour être sûr (identique à ton JS)
+        gain_map = {1:1, 2:3, 3:8, 4:20, 5:50, 6:120, 7:300, 8:800, 9:2000, 10:5000}
+        inventory = save_json.get("inventory", [])
+        income_per_sec = sum(gain_map.get(item['id'], 0) for item in inventory if item and 'id' in item)
+
+        # 3. Calcul du temps écoulé
+        if not gain_hl_timestamp:
+            return jsonify({"status": "success", "gain": 0}), 200
+            
+        last_date = datetime.fromisoformat(gain_hl_timestamp.replace('Z', '+00:00'))
+        now_date = datetime.now(timezone.utc)
+        seconds_absent = (now_date - last_date).total_seconds()
+
+        if seconds_absent < 60: # Optionnel : Pas de gain si moins d'une minute
+            return jsonify({"status": "success", "gain": 0}), 200
+
+        # 4. Calcul du gain total avec malus de 50%
+        raw_gain = seconds_absent * income_per_sec
+        final_gain = round((raw_gain * 0.5), 1)
+
+        # 5. Mise à jour dans Supabase : on met last_claim à 1
+        supabase.table("Gun_Merge")\
+            .update({"last_claim": 1})\
+            .eq("username", username)\
+            .execute()
+
+        return jsonify({
+            "status": "success",
+            "gain": final_gain,
+            "seconds": int(seconds_absent),
+            "income_rate": income_per_sec
+        }), 200
+
+    except Exception as e:
+        print(f"[HL ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/gun_merge_update_data', methods=['POST'])
 def gun_merge_update_data():
