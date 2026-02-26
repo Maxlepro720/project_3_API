@@ -1084,9 +1084,6 @@ def get_HL_money():
         now_time = datetime.now(timezone.utc)
         
         seconds_absent = (now_time - start_time).total_seconds()
-        
-        # Debug pour toi dans les logs Render :
-        print(f"DEBUG: {username} absent depuis {seconds_absent}s")
 
         if seconds_absent < 10: # Trop court pour un gain
             return jsonify({"gain": 0})
@@ -1116,25 +1113,22 @@ def get_HL_money():
         return jsonify({"status": "error", "gain": 0}), 500
 @app.route('/gun_merge_update_data', methods=['POST'])
 def gun_merge_update_data():
-
     data = request.get_json(force=True)
     username = (data.get('username') or "").strip()
     save_data = data.get('save')
 
-    if not username:
-        return jsonify({"status": "error", "message": "Username manquant"}), 400
-
-    if not save_data:
-        return jsonify({"status": "error", "message": "Save manquant"}), 400
+    if not username or not save_data:
+        return jsonify({"status": "error", "message": "Données manquantes"}), 400
 
     try:
-
+        # L'utilisation de l'upsert va déclencher le Trigger SQL
+        # Le Trigger mettra à jour 'gain_HL' si 'save' a changé
         payload = {
             "username": username,
-            "save": save_data
+            "save": save_data,
+            "last_claim": 0  # On remet à 0 car le joueur est présent
         }
 
-        # UPSERT = crée si existe pas
         response = supabase.table("Gun_Merge")\
             .upsert(payload, on_conflict="username")\
             .execute()
@@ -1142,18 +1136,14 @@ def gun_merge_update_data():
         if response.data:
             return jsonify({
                 "status": "success",
-                "message": "Save Gun Merge sauvegardé"
+                "message": "Sauvegarde réussie et claim réarmé"
             }), 200
         else:
-            return jsonify({
-                "status": "error",
-                "message": "Erreur sauvegarde"
-            }), 500
+            return jsonify({"status": "error", "message": "Échec insertion"}), 500
 
     except Exception as e:
-        print(f"[SAVE GUN MERGE ERROR] {e}")
+        print(f"[SAVE ERROR] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
 @app.route('/gun_merge_get_data', methods=['POST'])
 def gun_merge_get_data():
 
