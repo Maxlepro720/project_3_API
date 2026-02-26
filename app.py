@@ -1055,7 +1055,94 @@ def casino_get_data():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/gun_merge_update_data', methods=['POST'])
+def gun_merge_update_data():
 
+    data = request.get_json(force=True)
+    username = (data.get('username') or "").strip()
+    save_data = data.get('save')
+
+    if not username:
+        return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+    if not save_data:
+        return jsonify({"status": "error", "message": "Save manquant"}), 400
+
+    try:
+
+        payload = {
+            "username": username,
+            "save": save_data
+        }
+
+        # UPSERT = crée si existe pas
+        response = supabase.table("Gun_Merge")\
+            .upsert(payload, on_conflict="username")\
+            .execute()
+
+        if response.data:
+            return jsonify({
+                "status": "success",
+                "message": "Save Gun Merge sauvegardé"
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Erreur sauvegarde"
+            }), 500
+
+    except Exception as e:
+        print(f"[SAVE GUN MERGE ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/gun_merge_get_data', methods=['POST'])
+def gun_merge_get_data():
+
+    data = request.get_json(force=True)
+    username = (data.get('username') or "").strip()
+
+    if not username:
+        return jsonify({"status": "error", "message": "Username manquant"}), 400
+
+    try:
+
+        response = supabase.table("Gun_Merge")\
+            .select("save")\
+            .eq("username", username)\
+            .limit(1)\
+            .execute()
+
+        # Si aucun save → créer ligne automatiquement
+        if not response.data:
+
+            default_save = {
+                "xp": 0,
+                "money": 1,
+                "buyPrice": 1,
+                "inventory": [None, None, None, None, None],
+                "currentLevel": 1
+            }
+
+            supabase.table("Gun_Merge").insert({
+                "username": username,
+                "save": default_save
+            }).execute()
+
+            return jsonify({
+                "status": "success",
+                "data": default_save
+            }), 200
+
+
+        return jsonify({
+            "status": "success",
+            "data": response.data[0]["save"]
+        }), 200
+
+
+    except Exception as e:
+        print(f"[LOAD GUN MERGE ERROR] {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 #-----------------------------------
